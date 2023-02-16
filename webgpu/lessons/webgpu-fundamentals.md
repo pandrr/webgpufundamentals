@@ -2,9 +2,22 @@ Title: WebGPU Fundamentals
 Description: The fundamentals of WebGPU
 TOC: Fundamentals
 
+This article will try to teach you the very fundamentals of WebGPU.
+
+<div class="warn">
+It is expected you already know JavaScript before
+you read this article. Concepts like
+<a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map">mapping arrays</a>,
+<a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Destructuring_assignment">destructuring assignment</a>,
+<a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax">spreading values</a>,
+<a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function">async/await</a>,
+<a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules">es6 module</a>,
+and more will be used extensively.
+</div>
+
 WebGPU is an API that lets you do 2 basic things.
 
-1. Draw triangles (and points and lines)
+1. Draw triangles to textures (and points and lines)
 
 2. Run computations on the GPU
 
@@ -14,8 +27,15 @@ Everything about WebGPU after that is up to you. It's like learning a computer
 language like JavaScript or C++. First you learn the basics, then it's up to
 you to creatively use those basic to solve your problem.
 
-This article we start with 1., Drawing Triangles.
+This article we start with "1. Drawing Triangles".
 [A different article will cover running computations on the GPU](webgpu-compute-shaders.html).
+
+We're going to split this into 3 major parts
+
+* Part 1: Get a small WebGPU program to draw a triangle
+* Part 2: Show examples of how to get data into WebGPU
+
+## Part 1: Get a small WebGPU program to draw a triangle
 
 To draw triangles with WebGPU we have to supply 2 "shaders". Shaders
 are functions that run on the GPU. These 2 shaders are
@@ -50,7 +70,7 @@ async function main() {
     return;
   }
 
-  const adapter = await navigator.requestAdapter();
+  const adapter = await gpu.requestAdapter();
   if (!adapter) {
     fail('this browser appears to support WebGPU but it\'s disabled');
     return;
@@ -84,8 +104,8 @@ us get a texture to render to that will be used to draw the canvas.
 
 Again the code above is pretty self explanatory. We get the context. We ask the
 system what the preferred canvas format is. This will be something either
-`"rgba8unorm"` or `"bgra8unorm"`. It's not really that important what it is but
-query it instead of specifying it will make things fastest for the user's system.
+`"rgba8unorm"` or `"bgra8unorm"`. It's not really that important what it is but by
+querying it it will make things fastest for the user's system.
 
 We pass that into the webgpu canvas context by calling `configure`. We pass in the
 `device`, the `format`, and an `alphaMode` which can be either `"opaque"` or
@@ -120,7 +140,7 @@ Shaders are written in a language called WebGPU Shading Language (WGSL) which is
 often pronounced wig-sil. WGSL is a semi-rust like strongly typed language
 which we'll try to go over more details in [another article](webgpu-wgsl-basics.html).
 
-For now, above we see a function called `vs` is declared with `@vertex`. This
+For now, we see a function called `vs` is declared with `@vertex`. This
 designates it as a vertex shader function.
 
 ```wgsl
@@ -130,7 +150,7 @@ designates it as a vertex shader function.
          ...
 ```
 
- It excepts one parameter we named `vertexIndex`.
+It excepts one parameter we named `vertexIndex`.
 `vertexIndex` is a `u32` which means a *32bit unsigned integer*. It gets its value
 from the builtin called `vertex_index`. `vertex_index` is the iteration number just like
 `index` in JavaScript's `Array.map(function(value, index) { ... })`. If we tell the GPU to
@@ -138,18 +158,19 @@ execute this function 10 times, the first time `vertex_index` would be `0`, the 
 it would be `1`, the 3rd time it would be `2`, etc...
 
 Our `vs` function is declared as returning a `vec4<f32>` which is vector of 4
-32bit floating point values. This returned value will be assigned to the
-`position` builtin. Every 3 times the vertex shader is executed a triangle will
-be drawn connecting the 3 `position` values returned.
+32bit floating point values. Think of it as an array of 4 values. This returned
+value will be assigned to the `position` builtin. Every 3 times the vertex
+shader is executed a triangle will be drawn connecting the 3 `position` values
+returned.
 
 Positions in WebGPU need to be returned in *clip space* where X goes from -1.0
 on the left to +1.0 on the right, Y goes from -1.0 at the bottom to +1.0 at the
-top. This is true regardless of the size of the canvas we are drawing to.
+top. This is true regardless of the size of the thing we are drawing to.
 
 <div class="webgpu_center"><img src="resources/clipspace.svg" style="width: 500px"></div>
 
-The `vs` function declares an array of of 3 `vec2<f32>`. Each is 2 32bit floating point
-values. It then fills out that array with 3 values
+The `vs` function declares an array of 3 `vec2<f32>`s. Each is 2 32bit floating point
+value. It then fills out that array with 3 vec2s.
 
 ```wgsl
         var pos = array<vec2<f32>, 3>(
@@ -159,9 +180,10 @@ values. It then fills out that array with 3 values
         );
 ```
 
-Finally it uses `vertexIndex` to turn one of the 3 values from the array.
-Since the function requires a 4 floating point values and `pos` is an array
-of `vec2<f32>` the code supplies `0.0` and `1.0` for the remaining 2 values.
+Finally it uses `vertexIndex` to return one of the 3 values from the array.
+Since the function requires 4 floating point values for its return type and
+since `pos` is an array of `vec2<f32>` the code supplies `0.0` and `1.0` for
+the remaining 2 values.
 
 ```wgsl
         return vec4<f32>(pos[vertexIndex], 0.0, 1.0);
@@ -174,7 +196,7 @@ The shader module also declares a function called `fs` that is declared with
       @fragment fn fs() -> @location(0) vec4<f32> {
 ```
 
-This function takes no inputs and returns a `vec4<f32>` at `location(0)`.
+This function takes no parameters and returns a `vec4<f32>` at `location(0)`.
 This means it will write to the first render target which will be our canvas.
 
 ```wgsl
@@ -184,6 +206,10 @@ This means it will write to the first render target which will be our canvas.
 The code returns `1, 0, 0, 1` which is red. Colors in WebGPU are usually
 specified as floating point values from `0.0` to `1.0` where the 4 values above
 correspond to red, green, blue, and alpha respectively.
+
+When the GPU rasterizes the triangle (draws it with pixels), it will call
+the fragment shader to find out what color to make each pixel. In our case
+we're just returning red.
 
 Now that we've created a shader module, we next need to make a render pipeline
 
@@ -202,11 +228,12 @@ Now that we've created a shader module, we next need to make a render pipeline
   });
 ```
 
-In this case there isn't much to see. We tell the pipeline to use
+In this case there isn't much to see. We tell the render pipeline to use
 the `vs` function from our shader module for a vertex shader and the
 `fs` function for our fragment shader. Otherwise we tell it
-the format of the first target. The first target corresponds to location 0
-as we specified in the shader.
+the format of the first render target. The first target corresponds to location 0
+as we specified in the shader. We'll later set that target to be a texture for
+the canvas.
 
 Now it's time to render.
 
@@ -238,17 +265,31 @@ Now it's time to render.
 ```
 
 First we create a command encoder. A command encoder is used to create
-a command buffer. Our first command is `beginRenderPass` which we
+a command buffer. We fill it with commands and then "submit" it to have
+the commands executed.
+
+Our first command is `beginRenderPass` which we
 need to pass an array of `colorAttachments`. In this case our only attachment
 is a texture view from our canvas which we get via the context we created at
 the start. Again, this corresponds to `location(0)` as we specified in the
 fragment shader.
 
-We also setup a clear value, yellow in this case, and a `loadOp` and `storeOp`
+Calling `context.getCurrentTexture()` gets a texture that will appear in the
+canvas. Calling `createView` gets a view into a specific part of a texture
+but with no parameters it will return the default part which is what we want
+in this case.
 
-We set our pipeline and then tell it to execute our vertex shader 3 times.
-By default, every 3 times our vertex shader is executed a triangle will be
-drawn connected the 3 values just returned from the vertex shader.
+We also setup a clear value, yellow, and a `loadOp` and `storeOp`. `loadOp: 'clear'`
+specifies to clear the texture to the clear value before drawing. The other
+option is `'load'` which means keep the contents of the texture as is.
+`storeOp: 'store'` means store the result of what we draw. We could also pass
+`'discard'` which would throw away what we draw. We'll cover why we might want
+to do that in [another article](webgpu-multisampling.html).
+
+We encode the command, `setPipeline` to set our pipeline and then tell it to
+execute our vertex shader 3 times. By default, every 3 times our vertex shader
+is executed a triangle will be drawn by connecting the 3 values just returned from
+the vertex shader.
 
 Finally we end the render pass, and then finish the encoder. This gives us
 a command buffer that represents the steps we just specified. Finally we
@@ -258,7 +299,10 @@ The result
 
 {{{example url="../webgpu-simple-triangle.html"}}}
 
----
+So, now we've seen a very small working WebGPU example.
+
+Now lets try to cover how to get more data into the shaders so that we can
+draw something more interesting than a hard coded yellow triangle.
 
 Let's try to explain this by implementing something similar to what the GPU does
 with vertex shaders and fragment shaders but in JavaScript. Hopefully this will give
@@ -307,11 +351,11 @@ draw(count, shader);
 ```
 
 The thing that makes GPU work complicated is that these functions run on a separate
-system in your computer. This means all the data you create and reference
+system in your computer, the GPU. This means all the data you create and reference
 has to somehow be sent to the GPU and you then need to communicate to the shader
 where you put that data and how to access it.
 
-Vertex And Fragment shaders can take data in 5 ways. Uniforms, Attributes, Buffers, Textures, Varyings.
+Vertex And Fragment shaders can take data in 6 ways. Uniforms, Attributes, Buffers, Textures, Varyings, Constants.
 
 1. Uniforms
 

@@ -1,0 +1,131 @@
+<html>
+  <head>
+    <title>WebGPU Simple Triangle</title>
+    <style>
+      @import url(resources/webgpu-lesson.css);
+    </style>
+  </head>
+  <body>
+    <canvas></canvas>
+  </body>
+  <script type="module">
+async function main() {
+  const gpu = navigator.gpu;
+  if (!gpu) {
+    fail('this browser does not support webgpu');
+    return;
+  }
+
+  const adapter = await gpu.requestAdapter();
+  if (!adapter) {
+    fail('this browser appears to support WebGPU but it\'s disabled');
+    return;
+  }
+
+  const device = await adapter.requestDevice();
+
+  const context = document.querySelector('canvas').getContext('webgpu');
+  const presentationFormat = gpu.getPreferredCanvasFormat();
+  context.configure({
+    device,
+    format: presentationFormat,
+    alphaMode: 'opaque',
+  });
+
+  const module = device.createShaderModule({
+    code: `
+      struct Uniforms {
+        color: vec4<f32>,
+        offset: vec2<f32>,
+      }
+      @group(0) @binding(0) var<uniform> uniforms: Uniforms;      
+
+      @vertex fn vs(
+        @builtin(vertex_index) vertexIndex : u32
+      ) -> @builtin(position) vec4<f32> {
+        var pos = array<vec2<f32>, 3>(
+          vec2<f32>( 0.0,  0.5),  // top center
+          vec2<f32>(-0.5, -0.5),  // bottom left
+          vec2<f32>( 0.5, -0.5)   // bottom right
+        );
+
+        return vec4<f32>(pos[vertexIndex] + uniforms.offset, 0.0, 1.0);
+      }
+
+      @fragment fn fs() -> @location(0) vec4<f32> {
+        return uniforms.color;
+      }
+    `,
+  });
+
+  const pipeline = device.createRenderPipeline({
+    layout: 'auto',
+    vertex: {
+      module,
+      entryPoint: 'vs',
+    },
+    fragment: {
+      module,
+      entryPoint: 'fs',
+      targets: [{ format: presentationFormat }],
+    },
+  });
+
+  // create a buffer for the uniform values
+  // color is 4 32bit floats (4bytes each)
+  // offset is 2 32bit floats (4bytes each)
+  const uniformBufferSize = 4 * 4 + 2 * 4;
+  const uniformBuffer = device.createBuffer({
+    size: Math.max(32, uniformBufferSize),
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  // create a typedarray to hold the values for the uniforms in JavaScript
+  const uniformValues = new Float32Array(4 + 2); // 1 vec4<f32> and 1 vec2<f32>
+  uniformValues.set([0, 1, 0, 1], 0);   // set the color
+  uniformValues.set([-0.5, -0.25], 4);  // set the offset
+
+  // copy the values from JavaScript to the GPU
+  device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+
+  const bindGroup = device.createBindGroup({
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: uniformBuffer }},
+    ],
+  });
+
+  function render() {
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: context.getCurrentTexture().createView(),
+          clearValue: [1, 1, 0, 1],
+          loadOp: 'clear',
+          storeOp: 'store',
+        },
+      ],
+    });
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+
+    const iterationCount = 3;
+    pass.draw(iterationCount);
+
+    pass.end();
+
+    const commandBuffer = encoder.finish();
+    device.queue.submit([commandBuffer]);
+  }
+
+  render();
+}
+
+function fail(msg) {
+  alert(msg);
+}
+
+main();
+  </script>
+</html>
