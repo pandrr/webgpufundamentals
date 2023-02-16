@@ -4,20 +4,21 @@ module.exports = {
     'browser': true,
     'es6': true,
   },
+  parser: '@typescript-eslint/parser',
   'parserOptions': {
     'sourceType': 'module',
     'ecmaVersion': 11,
-    'ecmaFeatures': {
-      'jsx': true,
-    },
+    tsconfigRootDir: __dirname,
+    project: ['./jsconfig.json'],
   },
   'plugins': [
+    '@typescript-eslint',
     'eslint-plugin-html',
     'eslint-plugin-optional-comma-spacing',
     'eslint-plugin-one-variable-per-var',
     'eslint-plugin-require-trailing-comma',
   ],
-  'extends': 'eslint:recommended',
+  'extends': ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
   'rules': {
     'no-alert': 2,
     'no-array-constructor': 2,

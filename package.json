@@ -6,9 +6,11 @@
   "devDependencies": {
     "@gfxfundamentals/lesson-builder": "github:gfxfundamentals/lesson-builder#v2.0.0",
     "@gfxfundamentals/live-editor": "github:gfxfundamentals/live-editor#v1.2.2",
+    "@typescript-eslint/eslint-plugin": "^5.46.1",
+    "@typescript-eslint/parser": "^5.46.1",
     "@typescript-eslint/typescript-estree": "^5.46.0",
-    "@webgpu/types": "^0.1.23",
-    "eslint": "^8.7.0",
+    "@webgpu/types": "^0.1.27",
+    "eslint": "^8.30.0",
     "eslint-plugin-google-camelcase": "0.0.2",
     "eslint-plugin-html": "^6.2.0",
     "eslint-plugin-one-variable-per-var": "0.0.3",
@@ -24,7 +26,8 @@
     "load-grunt-tasks": "^5.1.0",
     "minami": "^1.2.3",
     "semver": "^7.3.5",
-    "servez": "^1.12.1"
+    "servez": "^1.12.1",
+    "typescript": "^4.9.4"
   },
   "scripts": {
     "build": "ld-check-dependencies && grunt",
