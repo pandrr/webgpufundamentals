@@ -35,24 +35,24 @@ async function main() {
   const module = device.createShaderModule({
     code: `
       struct Uniforms {
-        color: vec4<f32>,
-        offset: vec2<f32>,
+        color: vec4f,
+        offset: vec2f,
       }
       @group(0) @binding(0) var<uniform> uniforms: Uniforms;      
 
       @vertex fn vs(
         @builtin(vertex_index) vertexIndex : u32
-      ) -> @builtin(position) vec4<f32> {
-        var pos = array<vec2<f32>, 3>(
-          vec2<f32>( 0.0,  0.5),  // top center
-          vec2<f32>(-0.5, -0.5),  // bottom left
-          vec2<f32>( 0.5, -0.5)   // bottom right
+      ) -> @builtin(position) vec4f {
+        var pos = array<vec2f, 3>(
+          vec2f( 0.0,  0.5),  // top center
+          vec2f(-0.5, -0.5),  // bottom left
+          vec2f( 0.5, -0.5)   // bottom right
         );
 
-        return vec4<f32>(pos[vertexIndex] + uniforms.offset, 0.0, 1.0);
+        return vec4f(pos[vertexIndex] + uniforms.offset, 0.0, 1.0);
       }
 
-      @fragment fn fs() -> @location(0) vec4<f32> {
+      @fragment fn fs() -> @location(0) vec4f {
         return uniforms.color;
       }
     `,
@@ -85,8 +85,8 @@ async function main() {
   });
 
   // create a typedarray to hold the values for the uniforms in JavaScript
-  const uniformValues1 = new Float32Array(4 + 2); // 1 vec4<f32> and 1 vec2<f32>
-  const uniformValues2 = new Float32Array(4 + 2); // 1 vec4<f32> and 1 vec2<f32>
+  const uniformValues1 = new Float32Array(4 + 2); // 1 vec4f and 1 vec2f
+  const uniformValues2 = new Float32Array(4 + 2); // 1 vec4f and 1 vec2f
 
   uniformValues1.set([0, 1, 0, 1], 0);   // set the color
   uniformValues1.set([-0.5, -0.25], 4);  // set the offset
