@@ -4,7 +4,10 @@
 - [ ] explain typedarrays
 - [ ] make table of valid buffer usage combinations for every situation
 - [ ] make table of valid texture usage combinations for every situation
-
+- [ ] asking for higher limits
+- [ ] asking for the fallback
+- [ ] asking for compat?
+ 
 - [ ] resizing for the canvas
   - [ ] dpr
   - [ ] exact match

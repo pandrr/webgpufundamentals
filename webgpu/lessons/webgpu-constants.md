@@ -608,6 +608,8 @@ In the following articles we'll cover various ways to pass data into shaders.
 * [textures](webgpu-textures.html)
 * [constants](webgpu-constants.html)
 
+Well also give [an abbreviated reference on WGSL](webgpu-wgsl.html)
+
 <div class="webgpu_bottombar">
 <p>
 The code above that gets a WebGPU device can be shortened to just this
