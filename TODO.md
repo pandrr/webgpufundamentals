@@ -1,5 +1,10 @@
 # To Do
 
+- [ ] explain opaque/premultiplied canvas
+- [ ] explain typedarrays
+- [ ] make table of valid buffer usage combinations for every situation
+- [ ] make table of valid texture usage combinations for every situation
+
 - [ ] resizing for the canvas
   - [ ] dpr
   - [ ] exact match
@@ -37,6 +42,7 @@
 - [ ] picking via GPU
 - [ ] fog
 
+- [ ] sprites
 - [ ] text
   - [ ] html
   - [ ] canvas

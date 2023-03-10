@@ -24,6 +24,7 @@ async function main() {
 
   const device = await adapter.requestDevice();
 
+  // Get a WebGPU context and configure it
   const context = document.querySelector('canvas').getContext('webgpu');
   const presentationFormat = gpu.getPreferredCanvasFormat();
   context.configure({
