@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>WebGPU Simple Compute</title>
+    <title>WebGPU Simple Compute Shader</title>
     <style>
       @import url(resources/webgpu-lesson.css);
     </style>
@@ -25,6 +25,7 @@ async function main() {
   const device = await adapter.requestDevice();
 
   const module = device.createShaderModule({
+    label: 'doubling compute module',
     code: `
       @group(0) @binding(0) var<storage, read_write> data: array<f32>;
 
@@ -38,6 +39,7 @@ async function main() {
   });
 
   const pipeline = device.createComputePipeline({
+    label: 'doubling compute pipeline',
     layout: 'auto',
     compute: {
       module,
@@ -49,15 +51,17 @@ async function main() {
 
   // create a buffer on the GPU to hold our computation
   // input and output
-  const buffer = device.createBuffer({
+  const workBuffer = device.createBuffer({
+    label: 'work buffer',
     size: input.byteLength,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
   });
   // Copy our input data to that buffer
-  device.queue.writeBuffer(buffer, 0, input);
+  device.queue.writeBuffer(workBuffer, 0, input);
 
   // create a buffer on the GPU to get a copy of the results
   const resultBuffer = device.createBuffer({
+    label: 'result buffer',
     size: input.byteLength,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
   });
@@ -65,22 +69,27 @@ async function main() {
   // Setup a bindGroup to tell the shader which
   // buffer to use for the computation
   const bindGroup = device.createBindGroup({
+    label: 'bindGroup for work buffer',
     layout: pipeline.getBindGroupLayout(0),
     entries: [
-      { binding: 0, resource: { buffer } },
+      { binding: 0, resource: { buffer: workBuffer } },
     ],
   });
 
   // Encode commands to do the computation
-  const encoder = device.createCommandEncoder();
-  const pass = encoder.beginComputePass();
+  const encoder = device.createCommandEncoder({
+    label: 'doubling encoder',
+  });
+  const pass = encoder.beginComputePass({
+    label: 'doubling compute pass',
+  });
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, bindGroup);
   pass.dispatchWorkgroups(input.length);
   pass.end();
 
   // Encode a command to copy the results to a mappable buffer.
-  encoder.copyBufferToBuffer(buffer, 0, resultBuffer, 0, resultBuffer.size);
+  encoder.copyBufferToBuffer(workBuffer, 0, resultBuffer, 0, resultBuffer.size);
 
   // Finish encoding and submit the commands
   const commandBuffer = encoder.finish();
@@ -96,6 +105,7 @@ async function main() {
 }
 
 function fail(msg) {
+  // eslint-disable-next-line no-alert
   alert(msg);
 }
 

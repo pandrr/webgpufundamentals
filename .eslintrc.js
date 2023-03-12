@@ -10,6 +10,7 @@ module.exports = {
     'ecmaVersion': 11,
     tsconfigRootDir: __dirname,
     project: ['./jsconfig.json'],
+    extraFileExtensions: ['.html'],
   },
   'plugins': [
     '@typescript-eslint',

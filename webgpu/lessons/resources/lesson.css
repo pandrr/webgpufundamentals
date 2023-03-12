@@ -479,6 +479,13 @@ pre.prettyprint, code.prettyprint, .dos {
   line-height: 1;
 }
 
+.side-by-side {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .compare {
   display: flex;
   max-width: 1300px;

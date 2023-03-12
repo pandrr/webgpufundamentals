@@ -1,9 +1,18 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>WebGPU Simple Triangle</title>
+    <title>WebGPU Simple Triangle w/Uniforms</title>
     <style>
       @import url(resources/webgpu-lesson.css);
+html, body {
+  margin: 0;       /* remove the default margin          */
+  height: 100%;    /* make the html,body fill the page   */
+}
+canvas {
+  display: block;  /* make the canvas act like a block   */
+  width: 100%;     /* make the canvas fill its container */
+  height: 100%;
+}
     </style>
   </head>
   <body>
@@ -25,7 +34,9 @@ async function main() {
 
   const device = await adapter.requestDevice();
 
-  const context = document.querySelector('canvas').getContext('webgpu');
+  // Get a WebGPU context from the canvas and configure it
+  const canvas = document.querySelector('canvas');
+  const context = canvas.getContext('webgpu');
   const presentationFormat = gpu.getPreferredCanvasFormat();
   context.configure({
     device,
@@ -102,7 +113,7 @@ async function main() {
       colorAttachments: [
         {
           view: context.getCurrentTexture().createView(),
-          clearValue: [1, 1, 0, 1],
+          clearValue: [0.3, 0.3, 0.3, 1],
           loadOp: 'clear',
           storeOp: 'store',
         },
@@ -120,7 +131,18 @@ async function main() {
     device.queue.submit([commandBuffer]);
   }
 
-  render();
+  const observer = new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const canvas = entry.target;
+      const width = entry.contentBoxSize[0].inlineSize;
+      const height = entry.contentBoxSize[0].blockSize;
+      canvas.width = Math.min(width, device.limits.maxTextureDimension2D);
+      canvas.height = Math.min(height, device.limits.maxTextureDimension2D);
+      // re-render
+      render();
+    }
+  });
+  observer.observe(canvas);
 }
 
 function fail(msg) {
