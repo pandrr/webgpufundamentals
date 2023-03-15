@@ -11,7 +11,7 @@
     "@typescript-eslint/eslint-plugin": "^5.46.1",
     "@typescript-eslint/parser": "^5.46.1",
     "@typescript-eslint/typescript-estree": "^5.52.0",
-    "@webgpu/types": "^0.1.27",
+    "@webgpu/types": "^0.1.30",
     "eslint": "^8.30.0",
     "eslint-plugin-google-camelcase": "0.0.2",
     "eslint-plugin-html": "^6.2.0",
