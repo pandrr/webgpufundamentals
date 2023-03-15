@@ -899,7 +899,7 @@ function resizeCanvasToDisplaySize(canvas) {
 const canvas = document.querySelector('canvas');
 const context = canvas.getContext('webgpu');
 
-const presentationFormat = gpu.getPreferredFormat(adapter);
+const presentationFormat = navigator.gpu.getPreferredFormat(adapter);
 context.configure({
   device,
   format: presentationFormat,

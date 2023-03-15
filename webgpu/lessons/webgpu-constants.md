@@ -1,6 +1,6 @@
-Title: WebGPU Fundamentals
+Title: WebGPU Shader Constants
 Description: The fundamentals of WebGPU
-TOC: Fundamentals
+TOC: Constants
 
 This article will try to teach you the very fundamentals of WebGPU.
 
@@ -103,19 +103,12 @@ a device.
 
 ```js
 async function main() {
-  const gpu = navigator.gpu;
-  if (!gpu) {
-    fail('this browser does not support webgpu');
+  const adapter = await gpu?.requestAdapter();
+  const device = await adapter?.requestDevice();
+  if (!device) {
+    fail('need a browser that supports WebGPU');
     return;
   }
-
-  const adapter = await gpu.requestAdapter();
-  if (!adapter) {
-    fail('this browser appears to support WebGPU but it\'s disabled');
-    return;
-  }
-
-  const device = await adapter.requestDevice();
 }
 main();
 ```
@@ -133,7 +126,7 @@ us get a texture to render to that will be used to render the canvas in the webp
 
 ```js
   const context = document.querySelect('canvas').getContext('webgpu');
-  const presentationFormat = gpu.getPreferredCanvasFormat();
+  const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
   context.configure({
     device,
     format: presentationFormat,
@@ -370,19 +363,12 @@ We start off with the same code to get a WebGPU device
 
 ```js
 async function main() {
-  const gpu = navigator.gpu;
-  if (!gpu) {
-    fail('this browser does not support webgpu');
+  const adapter = await gpu?.requestAdapter();
+  const device = await adapter?.requestDevice();
+  if (!device) {
+    fail('need a browser that supports WebGPU');
     return;
   }
-
-  const adapter = await gpu.requestAdapter();
-  if (!adapter) {
-    fail('this browser appears to support WebGPU but it\'s disabled');
-    return;
-  }
-
-  const device = await adapter.requestDevice();
 ```
 
 When we create a shader module

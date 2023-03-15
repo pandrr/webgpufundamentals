@@ -1,5 +1,6 @@
 # To Do
 
+- [ ] Use external refs in build, remove un-needed links
 - [ ] explain opaque/premultiplied canvas
 - [ ] explain typedarrays
 - [ ] make table of valid buffer usage combinations for every situation

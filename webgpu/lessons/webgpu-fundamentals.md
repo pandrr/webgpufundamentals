@@ -105,16 +105,16 @@ What to notice about this diagram
 * Attributes feed data into the vertex shader, the vertex shader may feed data
   into the fragment shader
 
-* The fragment shader write to textures indirectly through the render pass
+* The fragment shader writes to textures indirectly through the render pass
   description
 
 To execute shaders on the GPU you need to create all of these resources and
-setup this state. Creation on resources is relatively straight forward. One
-interesting thing is most WebGPU resource can not be changed after creation. You
+setup this state. Creation of resources is relatively straight forward. One
+interesting thing is most WebGPU resources can not be changed after creation. You
 can change their contents but not their size, usage, format, etc... If you want
 to change any of that stuff you create a new resource and destroy the old one.
 
-Some of the state is setup by creating command buffers. Command buffers are
+Some of the state is setup by creating and then executing command buffers. Command buffers are
 literally what their name suggests. They are a buffer of commands. You create
 encoders. The encoders encode commands into the command buffer. You then
 *finish* the encoder and it gives you the command buffer it created. You can
@@ -125,6 +125,7 @@ the command buffer that was created.
 
 <div class="webgpu_center side-by-side"><div style="min-width: 300px; max-width: 400px; flex: 1 1;"><pre class="prettyprint lang-javascript"><code>{{#escapehtml}}
 encoder = device.createCommandEncoder()
+// draw something
 {
   pass = encoder.beginRenderPass(...)
   pass.setPipeline(...)
@@ -136,6 +137,7 @@ encoder = device.createCommandEncoder()
   pass.draw(...)
   pass.end()
 }
+// draw something else
 {
   pass = encoder.beginRenderPass(...)
   pass.setPipeline(...)
@@ -144,6 +146,7 @@ encoder = device.createCommandEncoder()
   pass.draw(...)
   pass.end()
 }
+// compute something
 {
   pass = encoder.beginComputePass(...)
   pass.beginComputePass(...)
@@ -224,36 +227,32 @@ Then we need a `<script>` tag to hold our JavaScript.
 All of the JavaScript below will go inside this script tag
 
 WebGPU is an asynchronous API so it's easiest to use in an async function. We
-start off by checking for `navigator.gpu`, requesting an adaptor, and requesting
+start off by checking for requesting an adaptor, and requesting
 a device.
 
 ```js
 async function main() {
-  const gpu = navigator.gpu;
-  if (!gpu) {
-    fail('this browser does not support webgpu');
+  const adapter = await gpu?.requestAdapter();
+  const device = await adapter?.requestDevice();
+  if (!device) {
+    fail('need a browser that supports WebGPU');
     return;
   }
-
-  const adapter = await gpu.requestAdapter();
-  if (!adapter) {
-    fail('this browser appears to support WebGPU but it\'s disabled');
-    return;
-  }
-
-  const device = await adapter.requestDevice();
 }
 main();
 ```
 
-The code above is fairly self explanatory. First we check if `navigator.gpu`
-exists. If not then the browser doesn't support WebGPU. Next we request an
-adaptor. And adaptor represents the GPU itself. If the WebGPU api exists but
-requesting an adaptor fails then WebGPU is probably disabled. Either the browser
-disabled it because of a bug or possibly the user disabled it.
+The code above is fairly self explanatory. First we request an adapter by using the
+[`?.` optional chaining operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Optional_chaining).
+so that if `navigator.gpu` does not exist then `adapter` will be undefined.
+If it does exist then we'll call `requestAdapter`. It turns its results asynchronously
+so we need the `await`. The adapter represents a specific GPU. Some devices
+have multiple GPUs.
 
-Finally we request a device. Requesting a device can fail as well but that seems
-rare.
+From the adapter we request the device but again use `?.` so that if adapter happens
+to be undefined then device will also be undefined.
+
+If the `device` not set it's likely the user has an old browser.
 
 Next up we look up the canvas and create a `webgpu` context for it. This will
 let us get a texture to render to that will be used to render the canvas in the
@@ -263,7 +262,7 @@ webpage.
   // Get a WebGPU context from the canvas and configure it
   const canvas = document.querySelector('canvas');
   const context = canvas.getContext('webgpu');
-  const presentationFormat = gpu.getPreferredCanvasFormat();
+  const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
   context.configure({
     device,
     format: presentationFormat,
@@ -533,19 +532,12 @@ We start off with the same code to get a WebGPU device
 
 ```js
 async function main() {
-  const gpu = navigator.gpu;
-  if (!gpu) {
-    fail('this browser does not support webgpu');
+  const adapter = await gpu?.requestAdapter();
+  const device = await adapter?.requestDevice();
+  if (!device) {
+    fail('need a browser that supports WebGPU');
     return;
   }
-
-  const adapter = await gpu.requestAdapter();
-  if (!adapter) {
-    fail('this browser appears to support WebGPU but it\'s disabled');
-    return;
-  }
-
-  const device = await adapter.requestDevice();
 ```
 
 When we create a shader module
@@ -880,27 +872,53 @@ start going over actual techniques.
 
 <div class="webgpu_bottombar">
 <p>
-The code above that gets a WebGPU device can be shortened to just this
+The code above gets a WebGPU device in very terse way. A more verbose
+way would be something like
 </p>
 <pre class="prettyprint showmods">
-async function main() {
-  const adapter = await navigator.gpu?.requestAdapter();
-  const device = await adapter?.requestDevice();
-  if (!device) {
-    fail('can not use WebGPU for some reason.');
+async function start() {
+  if (!navigator.gpu) {
+    fail('this browser does not support WebGPU');
     return;
   }
+
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) {
+    fail('this browser supports webgpu but it appears disabled');
+    return;
+  }
+
+  const device = await adapter?.requestDevice();
+  device.lost.then((info) => {
+    console.error(`WebGPU device was lost: ${info.message}`);
+
+    // 'reason' will be 'destroyed' if we intentionally destroy the device.
+    if (info.reason !== 'destroyed') {
+      // try again
+      start();
+    }
+  });
   
-  ...
+  main(device);
+}
+start();
+
+function main(device) {
+  ... do webgpu ...
+}
 </pre>
 <p>
-This works because of the of the <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Optional_chaining">optional chaining operator <code>?.</code></a>.
-If <code>navigator.gpu</code> is undefined then <code>adapter</code> will be <code>undefined</code> instead of chaining to call <code>requestAdapter</code>.
-In the following line, if <code>adapter</code> happens to be <code>undefined</code> the device will be <code>undefined</code> instead of chaining to call <code>requestDevice</code>.
+<code>device.lost</code> is a promise that starts off unresolved. It will resolve if and when the
+device is lost. A device can be lost for many reasons. Maybe the user ran a really intensive
+app and it crashed their GPU. Maybe the user updated their drivers. Maybe the user has
+an external GPU and unplugged it.
 </p>
 <p>
-Which method you use is up to you. My guess is, checking for the individual steps of failure
-is rarely worth it.
+Note that <code>requestDevice</code> always returns a device. It just might start lost.
+WebGPU is designed so that, for the most part, the device will appear to work,
+at least from an API level. Calls to create things and use them will appear
+to succeed but they won't actually function. It's up to you to take action
+when the <code>lost</code> promise resolves.
 </p>
 </div>
 
