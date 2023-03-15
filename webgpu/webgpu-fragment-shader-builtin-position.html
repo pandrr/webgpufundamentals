@@ -45,7 +45,7 @@ async function main() {
   });
 
   const module = device.createShaderModule({
-    label: 'our hardcoded checkerboard triangle shaders',
+    label: 'hardcoded checkerboard triangle shaders',
     code: `
       struct OurVertexShaderOutput {
         @builtin(position) position: vec4f,
@@ -78,7 +78,7 @@ async function main() {
   });
 
   const pipeline = device.createRenderPipeline({
-    label: 'our hardcoded red triangle pipeline',
+    label: 'hardcoded checkerboard triangle pipeline',
     layout: 'auto',
     vertex: {
       module,
@@ -96,7 +96,7 @@ async function main() {
       label: 'our encoder',
     });
     const pass = encoder.beginRenderPass({
-      label: 'our basic canvas renderPass',
+      label: 'basic canvas renderPass with clear',
       colorAttachments: [
         {
           view: context.getCurrentTexture().createView(),

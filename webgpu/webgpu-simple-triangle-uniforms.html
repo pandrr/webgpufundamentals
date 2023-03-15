@@ -46,11 +46,13 @@ async function main() {
 
   const module = device.createShaderModule({
     code: `
-      struct Uniforms {
+      struct OurUniforms {
         color: vec4f,
+        scale: vec2f,
         offset: vec2f,
-      }
-      @group(0) @binding(0) var<uniform> uniforms: Uniforms;      
+      };
+
+      @group(0) @binding(0) var<uniform> ourUniforms: OurUniforms;
 
       @vertex fn vs(
         @builtin(vertex_index) vertexIndex : u32
@@ -61,11 +63,12 @@ async function main() {
           vec2f( 0.5, -0.5)   // bottom right
         );
 
-        return vec4f(pos[vertexIndex] + uniforms.offset, 0.0, 1.0);
+        return vec4f(
+          pos[vertexIndex] * ourUniforms.scale + ourUniforms.offset, 0.0, 1.0);
       }
 
       @fragment fn fs() -> @location(0) vec4f {
-        return uniforms.color;
+        return ourUniforms.color;
       }
     `,
   });
@@ -84,21 +87,17 @@ async function main() {
   });
 
   // create a buffer for the uniform values
-  // color is 4 32bit floats (4bytes each)
-  // offset is 2 32bit floats (4bytes each)
-  const uniformBufferSize = 4 * 4 + 2 * 4;
+  const uniformBufferSize =
+    4 * 4 + // color is 4 32bit floats (4bytes each)
+    2 * 4 + // scale is 2 32bit floats (4bytes each)
+    2 * 4;  // offset is 2 32bit floats (4bytes each)
   const uniformBuffer = device.createBuffer({
-    size: Math.max(32, uniformBufferSize),
+    size: uniformBufferSize,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
   // create a typedarray to hold the values for the uniforms in JavaScript
-  const uniformValues = new Float32Array(4 + 2); // 1 vec4f and 1 vec2f
-  uniformValues.set([0, 1, 0, 1], 0);   // set the color
-  uniformValues.set([-0.5, -0.25], 4);  // set the offset
-
-  // copy the values from JavaScript to the GPU
-  device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+  const uniformValues = new Float32Array(4 + 2 + 2); // 1 vec4f and 2 vec2fs
 
   const bindGroup = device.createBindGroup({
     layout: pipeline.getBindGroupLayout(0),
@@ -107,7 +106,21 @@ async function main() {
     ],
   });
 
+  // offsets to the various uniform values in float32 indices
+  const kColorOffset = 0;
+  const kScaleOffset = 4;
+  const kOffsetOffset = 6;
+
   function render() {
+    // The the uniform values in our JavaScript side Float32Array
+    const aspect = canvas.width / canvas.height;
+    uniformValues.set([0, 1, 0, 1], kColorOffset);        // set the color
+    uniformValues.set([0.5 / aspect, 0.5], kScaleOffset); // set the scale
+    uniformValues.set([-0.5, -0.25], kOffsetOffset);      // set the offset
+
+    // copy the values from JavaScript to the GPU
+    device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
+
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [

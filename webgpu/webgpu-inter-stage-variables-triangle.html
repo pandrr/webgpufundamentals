@@ -79,7 +79,7 @@ async function main() {
   });
 
   const pipeline = device.createRenderPipeline({
-    label: 'our hardcoded red triangle pipeline',
+    label: 'hardcoded rgb triangle pipeline',
     layout: 'auto',
     vertex: {
       module,
@@ -94,10 +94,10 @@ async function main() {
 
   function render() {
     const encoder = device.createCommandEncoder({
-      label: 'our encoder',
+      label: 'render triangle encoder',
     });
     const pass = encoder.beginRenderPass({
-      label: 'our basic canvas renderPass',
+      label: 'basic canvas renderPass',
       colorAttachments: [
         {
           view: context.getCurrentTexture().createView(),

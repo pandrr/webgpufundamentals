@@ -7,7 +7,9 @@
 - [ ] asking for higher limits
 - [ ] asking for the fallback
 - [ ] asking for compat?
- 
+- [ ] multisample
+  - [ ] can we display it at the seam of a quad?
+
 - [ ] resizing for the canvas
   - [ ] dpr
   - [ ] exact match

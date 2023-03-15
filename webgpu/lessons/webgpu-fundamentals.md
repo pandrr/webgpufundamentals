@@ -80,9 +80,10 @@ or
 The functions you run on the GPU are just functions, just like JavaScript
 functions. The part that different is they run on the GPU and so to run them you
 need to copy all the data you want them to access to the GPU in the form of
-buffers or textures. You need to specify in the functions which bindings or
-locations the function will look for the data. And, you need to bind the data to
-the bindings or locations. Once you've done that you tell the GPU to execute the
+buffers and textures and they only output to those buffers and textures. 
+You need to specify in the functions which bindings or locations the function
+will look for the data. And, back in JavaScript, you need to bind the buffers and
+textures holding your data to the bindings or locations. Once you've done that you tell the GPU to execute the
 function.
 
 Maybe a picture will help. Here is a *simplified* diagram of WebGPU setup to draw triangles
@@ -95,7 +96,7 @@ What to notice about this diagram
 * There is a **Pipeline**. It contains the vertex shader and fragment shader the
   GPU will run. You could also have a pipeline with a compute shader.
 
-* The shaders reference resources (buffers, textures, samples) indirectly
+* The shaders reference resources (buffers, textures, samplers) indirectly
   through **Bind Groups**
 
 * The pipeline has attributes that reference buffers indirectly through the
@@ -508,6 +509,11 @@ The result
 
 {{{example url="../webgpu-simple-triangle.html"}}}
 
+It's import to important to emphasize that all of these functions we called
+like `setPipeline`, and `draw` only add commands to a command buffer.
+They don't actually execute the commands. The commands are executed
+when we submit the command buffer to the device queue.
+
 So, now we've seen a very small working WebGPU example. It should be pretty
 obvious that hard coding a triangle inside a shader is not very flexible. We
 need ways to provide data and we'll cover those in the following articles. The
@@ -517,7 +523,7 @@ points to take away from the code above,
 * Shaders are specified in a shader module and then turned into a pipeline
 * WebGPU can draw triangles
 * WebGPU draws to textures (we happened to get a texture from the canvas)
-* WebGPU works by encoding commands and the submitting them.
+* WebGPU works by encoding commands and then submitting them.
 
 # Run computations on the GPU
 

@@ -247,4 +247,38 @@ implemented [using textures](webgpu-textures.html). In fact you'll see an issue
 if you size the window. Because the checkerboard is based on the pixel coordinates
 of the canvas it's relative to the canvas, not relative to the triangle.
 
+## Interpolation Settings
 
+We saw above that inter-stage variables, the outputs from a vertex shader are
+interpolated when passed to the fragment shader. There are 2 sets of settings
+that can be changed for the interpolation happens. Setting them to anything
+other than the defaults is not extremely common but there are use cases which
+will be covered in other articles.
+
+Interpolation type:
+
+* `perspective`: Values are interpolated in a perspective correct manner (**default**)
+* `linear`: Values are interpolated in a linear, non-perspective correct manner.
+* `flat`:Values are not interpolated. Interpolation sampling is not used with flat interpolated
+
+Interpolation sampling:
+
+* `center`: Interpolation is performed at the center of the pixel (**default**)
+* `centroid`: Interpolation is performed at a point that lies within all the samples covered by the fragment within the current primitive. This value is the same for all samples in the primitive.
+* `sample`:  Interpolation is performed per sample. The fragment shader is invoked once per sample when this attribute is applied.
+
+You specify these as attributes. For example
+
+```wgsl
+  @location(2) @interpolate(linear, center) myVariableFoo: vec4f;
+  @location(3) @interpolate(flat) myVariableBar: vec4f;
+```
+
+Note that if the inter-stage variable is an integer type then you must set its
+interpolation to `flat`. 
+
+If you set the interpolation type to `flat`, the value passed to the fragment shader
+is the value of the inter-stage variable for the first vertex in that triangle.
+
+In the [next article we'll cover uniforms](webgpu-uniforms.html) as another way to
+pass data into shaders.

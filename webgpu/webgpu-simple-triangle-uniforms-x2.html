@@ -45,12 +45,14 @@ async function main() {
   });
 
   const module = device.createShaderModule({
+    label: 'shader with uniforms',
     code: `
       struct Uniforms {
         color: vec4f,
         offset: vec2f,
+        scale: vec2f,
       }
-      @group(0) @binding(0) var<uniform> uniforms: Uniforms;      
+      @group(0) @binding(0) var<uniform> uni: Uniforms;
 
       @vertex fn vs(
         @builtin(vertex_index) vertexIndex : u32
@@ -61,11 +63,11 @@ async function main() {
           vec2f( 0.5, -0.5)   // bottom right
         );
 
-        return vec4f(pos[vertexIndex] + uniforms.offset, 0.0, 1.0);
+        return vec4f(pos[vertexIndex] * uni.scale + uni.offset, 0.0, 1.0);
       }
 
       @fragment fn fs() -> @location(0) vec4f {
-        return uniforms.color;
+        return uni.color;
       }
     `,
   });
