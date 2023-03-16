@@ -65,6 +65,12 @@ li > p {
   width: calc(100% - 2em);
 }
 
+sup {
+  vertical-align: baseline;
+  position: relative;
+  top: -0.4em;
+}
+
 table {
     margin-top: 1em;
     margin-bottom: 1em;

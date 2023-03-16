@@ -1,6 +1,9 @@
 # To Do
 
-- [ ] Use external refs in build, remove un-needed links
+- [ ] Use external refs in build
+  - [ ] Figure out how to check for device.fn, encoder.fn, pass.fn
+- [ ] Fix code gen double output for non-struct
+
 - [ ] explain opaque/premultiplied canvas
 - [ ] explain typedarrays
 - [ ] make table of valid buffer usage combinations for every situation
