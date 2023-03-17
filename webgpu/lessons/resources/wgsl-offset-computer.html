@@ -4,6 +4,19 @@
     <link href="lesson.css" rel="stylesheet">
   </head>
   <body>
+    <div id="split">
+      <div id="left">
+
+      </div>
+      <div id="right">
+        <button type="button">Process</button>
+        <label><input id="compile" type="checkbox" checked>Compile Shader (finds errors)</label>    
+        <label><input id="style" type="radio">as views</label>
+        <label><input id="style" type="radio">as offsets</label>
+        <pre id="results"></pre>
+      </div>
+    </div>
+
     <script src="/3rdparty/jquery-3.3.1.slim.min.js"></script>
     <script src="prettify.js"></script>
 
@@ -16,6 +29,14 @@ import {
   getCodeForUniform,
 } from './data-byte-diagram.js';
 import { createElem as el } from './elem.js';
+
+// Hover on each property to see its docs!
+monaco.editor.create(document.getElementById("container"), {
+	value: text,
+	language: "javascript",
+	automaticLayout: true,
+});
+
 
 const code = `
 struct Test {

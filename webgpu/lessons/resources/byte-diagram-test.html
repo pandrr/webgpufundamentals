@@ -2,10 +2,9 @@
 <html>
   <head>
     <link href="lesson.css" rel="stylesheet">
+    <script src="prettify.js"></script>
   </head>
   <body>
-<div id="forkongithub"><div></div></div>
-
     <script type="module">
 import {
   makeShaderDataDefinitions,
@@ -17,6 +16,26 @@ import {
 import { createElem as el } from './elem.js';
 
 const code = `
+struct Ex4a {
+  velocity: vec3f,
+};
+ 
+struct Ex4 {
+  orientation: vec3f,
+  size: f32,
+  direction: array<vec3f, 1>,
+  scale: f32,
+  info: Ex4a,
+  friction: f32,
+};
+
+struct V3Align {
+      v3f: vec3f,
+      f1: f32,  // this should be at offset 12
+      v3fArr: array<vec3f, 1>,
+      f2: f32,  // this should be at offset 32
+};
+
 struct Test {
   m_i32: i32, 
   m_u32: u32, 
@@ -108,6 +127,8 @@ struct Foo {
    moo: u32,
 };
 
+@group(0) @binding(1) var<uniform> myUniformsV3b: Ex4;
+@group(0) @binding(1) var<uniform> myUniformsV3: V3Align;
 @group(0) @binding(1) var<uniform> myUniforms0: Test;
 @group(0) @binding(1) var<uniform> myUniformsA: TestArr;
 @group(0) @binding(1) var<uniform> myUniforms1: MyUniforms;
@@ -122,25 +143,17 @@ const defs = makeShaderDataDefinitions(code);
 
 
 for (const [name, uniform] of Object.entries(defs.uniforms)) {
+  //if (name !== 'myUniformsA') {
+  //  continue;
+  //}
   topElem.appendChild(el('hr'));
   topElem.appendChild(createByteDiagramForType(name, uniform));
 
   topElem.appendChild(el('hr'));
   const pre = el('pre', {className: 'prettyprint', textContent: getCodeForUniform(name, uniform)});
   topElem.appendChild(pre);
+  window.prettyPrint(pre);
 }
     </script>
-    <script src="/contributors.js"></script>
-    <script>
-// eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars
-const settings = {
-  contribTemplate: 'Thank you <a href="${html_url}"><img src="${avatar_url}"> ${login}</a><br>for <a href="https://github.com/${owner}/${repo}/commits?author=${login}">${contributions} contributions</a>',
-  owner: 'gfxfundamentals',
-  repo: 'webgl-fundamentals',
-};
-    </script>
-    <script src="/3rdparty/jquery-3.3.1.slim.min.js"></script>
-    <script src="lesson.js"></script>
-    <script src="prettify.js"></script>
   </body>
 </html>

@@ -54,11 +54,17 @@ renderDiagrams({
 
   ourStructEx4(elem) {
     const wgsl = `
+      struct Ex4a {
+        velocity: vec3f,
+      };
+
       struct Ex4 {
-        transform: mat3x3f,
+        orientation: vec3f,
         size: f32,
-        directions: array<vec3f, 4>,
+        direction: array<vec3f, 1>,
         scale: f32,
+        info: Ex4a,
+        friction: f32,
       };
       @group(0) @binding(0) var<uniform> foo: Ex4;
     `;

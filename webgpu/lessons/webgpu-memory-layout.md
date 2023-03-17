@@ -287,34 +287,39 @@ it's in a matrix or an array ends up having an extra space.
 Here's another one
 
 ```wgsl
+struct Ex4a {
+  velocity: vec3f,
+};
+
 struct Ex4 {
-  transform: mat3x3<f32>,
+  orientation: vec3f,
   size: f32,
-  directions: array<vec3f, 4>,
+  direction: array<vec3f, 1>,
   scale: f32,
+  info: Ex4a,
+  friction: f32,
 };
 ```
 
 <div class="webgpu_center" data-diagram="ourStructEx4"></div>
 
-Why did `size` end up at byte offset 48 but `scale` got
-stuck on the end of the direction array?
+Why did `size` end up at byte offset 12, just after orientation but `scale` and
+`friction` got bumped offsets 32 and 64
 
-Again, looking at the alignment table, `mat3x3f<f32>` has a size
-of 48 bytes so it includes that last empty space. Conversely
-`array<vec3f, 4>` is just 4 `vec3f`s. Each one has to be aligned
-to 16 but it's size is only 12 so WGSL is able to put `scale`
-right after it.
+That's because arrays and structs have their own own special alignment rules so
+even though the array is a single `vec3f` and the `Ex4a` struct is also a single
+`vec3f` they get aligned according to different rules.
 
 # Computing Offset and Sizes is a PITA!
 
-This is probably the largest pain point of WebGPU. You are required
-to compute these offsets yourself and keep them up to date. If you
-add a member somewhere in the middle of a struct in your shaders 
-you need to back to your JavaScript and update all the offsets.
-Get a single byte or length wrong and the data you pass to the shader
-will be wrong. You won't get an error, but your shader will likely
-do the wrong thing because it's looking at bad data.
+Computing sizes and offsets of data in WGSL is probably the largest pain point
+of WebGPU. You are required to compute these offsets yourself and keep them up
+to date. If you add a member somewhere in the middle of a struct in your shaders
+you need to go back to your JavaScript and update all the offsets. Get a single
+byte or length wrong and the data you pass to the shader will be wrong. You
+won't get an error, but your shader will likely do the wrong thing because it's
+looking at bad data. Your model won't draw or your computation will produce
+bad results.
 
 Fortunately there are libraries to help with this.
 
@@ -334,13 +339,21 @@ import {
 } from 'https://greggman.github.io/webgpu-utils/dist/0.x/webgpu-utils.module.js';
 
 const code = `
+struct Ex4a {
+  velocity: vec3f,
+};
+
 struct Ex4 {
-  transform: mat3x3<f32>,
+  orientation: vec3f,
   size: f32,
-  directions: array<vec3f, 4>,
+  direction: array<vec3f, 1>,
   scale: f32,
+  info: Ex4a,
+  friction: f32,
 };
 @group(0) @binding(0) var<uniform> myUniforms: Ex4;
+
+...
 `;
 
 const defs = makeShaderDataDefinitions(code);
@@ -348,19 +361,14 @@ const myUniformValues = makeStructuredView(defs.uniforms.myUniforms);
 
 // Set some values via set
 myUniformValues.set({
-  transform: [
-    1, 0, 0, 
-    0, 2, 0,
-    0, 0, 1,
-  ],
-  size: 1.3,
-  directions: [
-    0, 0, 1,
-    0, 0, -1,
-    -1, 0, 1,
-    1, 1, 0,
-  ],
-  scale: 4.5,
+  orientation: [1, 0, -1],
+  size: 2,
+  direction: [0, 1, 0],
+  scale: 1.5,
+  info: {
+    velocity: [2, 3, 4],
+  },
+  friction: 0.1,
 });
 
 // now pass myUniformValues.arrayBuffer to WebGPU when needed.
@@ -369,10 +377,10 @@ myUniformValues.set({
 Whether you use this particular library or a different one or
 none at all is up to you. For me, I would often spent 20-30-60 minutes
 trying to figure out why something was not working only to find
-that I manually computed an offset or size wrong.
+that I manually computed an offset or size wrong so for my own work
+I'd rather use a library and avoid that pain.
 
 If you do want to do it manually though, 
 [here's a page that will compute the offsets for you](wgsl-offset-computer.html)
-
 
 <script type="module" src="webgpu-memory-layout.js"></script>
