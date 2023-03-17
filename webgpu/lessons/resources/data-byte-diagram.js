@@ -225,17 +225,14 @@ function addTypeToGrid(name, type) {
   const grid = new GridBuilder(kNumBytesPerRow);
   addGridType(grid, type, '');
   grid.addPadding(type.size - grid.byteOffset);
-  return el('div', {className: 'type'}, [
-    el('div', {className: 'name', textContent: name}),
-    el('div', {className: 'tt'}, [grid.tableElem]),
-  ]);
+  return grid.tableElem;
 }
 
 // ----
 
-function showTypes(view, arrayBufferName, indent = '') {
+function showTypes(view, arrayBufferName, template, indent = '') {
   if (Array.isArray(view)) {
-    const lines = view.map(elem => addPrefixSuffix(showTypes(elem, arrayBufferName, indent + '  '), indent + '  ', '')).flat();
+    const lines = view.map(elem => addPrefixSuffix(showTypes(elem, arrayBufferName, template, indent + '  '), indent + '  ', '')).flat();
     return [
       '[',
       ...lines,
@@ -245,21 +242,22 @@ function showTypes(view, arrayBufferName, indent = '') {
     const isWholeBuffer = view.byteOffset === 0 && view.byteLength === view.buffer.byteLength;
     return [
       isWholeBuffer
-         ? `new ${Object.getPrototypeOf(view).constructor.name}(${arrayBufferName}})`
-         : `new ${Object.getPrototypeOf(view).constructor.name}(${arrayBufferName}, ${view.byteOffset}, ${view.length})`,
+         ? template.wholeBuffer(view)
+         : template.buffer(view),
     ];
   } else {
     return [
       '{',
-      ...showViews(view, arrayBufferName, indent),
+      ...showViews(view, arrayBufferName, template, indent),
       `${indent}}`,
     ];
   }
 }
-function showViews(views, arrayBufferName, indent = '') {
+
+function showViews(views, arrayBufferName, template, indent = '') {
   indent += '  ';
   return Object.entries(views).map(([name, view]) => {
-    const lines = showTypes(view, arrayBufferName, indent);
+    const lines = showTypes(view, arrayBufferName, template, indent);
     return addPrefixSuffix(lines, `${indent}${name}: `, ',');
   }).flat();
 }
@@ -270,21 +268,37 @@ function addPrefixSuffix(lines, prefix, suffix) {
   return lines;
 }
 
-function showView(values, name, arrayBufferName) {
-  const lines = showTypes(values.views, arrayBufferName);
+function showView(values, name, arrayBufferName, template) {
+  const lines = showTypes(values.views, arrayBufferName, template);
   const [prefix, suffix] = values.views.buffer instanceof ArrayBuffer
-     ? [`const ${name}View: ${lines[0]}`, ',']
-     : [`const ${name}Views = `, ';'];
+     ? template.typedArray(name, lines)
+     : template.nonTypedArray(name, lines);
   return addPrefixSuffix(lines, prefix, suffix);
 }
 
-export function getCodeForUniform(name, uniform) {
+export function getCodeForUniform(name, uniform, mode = 'views') {
   const values = makeStructuredView(uniform);
-  const arrayBufferName = `${name}Values`;
+  const arrayBufferName = mode === 'views' ? `${name}Values` : `${name}`;
+
+  const template = mode === 'views'
+    ? {
+      decl: (name, size) => `const ${name} = new ArrayBuffer(${size});`,
+      typeArray: (name, lines) => [`const ${name}view: ${lines[0]}`, ','],
+      nonTypedArray: (name) => [`const ${name}Views = `, ';'],
+      wholeBuffer: (view) => `new ${Object.getPrototypeOf(view).constructor.name}(${arrayBufferName}})`,
+      buffer: (view) => `new ${Object.getPrototypeOf(view).constructor.name}(${arrayBufferName}, ${view.byteOffset}, ${view.length})`,
+    }
+    : {
+      decl: (name, size) => `const ${name}Size = ${size}`,
+      typeArray: (name, lines) => [`const ${name}view: ${lines[0]}`, ','],
+      nonTypedArray: (name) => [`const ${name}Info = `, ';'],
+      wholeBuffer: (view) => `{ type: ${Object.getPrototypeOf(view).constructor.name} }`,
+      buffer: (view) => `{ type: ${Object.getPrototypeOf(view).constructor.name}, byteOffset: ${view.byteOffset}, length: ${view.length} }`,
+    };
 
   const lines = [
-    `const ${arrayBufferName} = new ArrayBuffer(${values.arrayBuffer.byteLength});`,
-    ...showView(values, name, arrayBufferName),
+    template.decl(arrayBufferName, values.arrayBuffer.byteLength),
+    ...showView(values, name, arrayBufferName, template),
   ];
 
   return lines.join('\n');
