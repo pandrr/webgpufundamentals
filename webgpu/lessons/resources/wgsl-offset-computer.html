@@ -3,6 +3,14 @@
   <head>
     <link href="lesson.css" rel="stylesheet">
     <style>
+      :root {
+        --error-bg-color: pink;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --error-bg-color: darkred;
+        }
+      }
       html, body {
         margin: 0;
         height: 100%;
@@ -75,6 +83,10 @@
       #diagram {
         padding: 1em;
       }
+      #errors {
+        font-size: small;
+        padding: 1em;
+      }
       pre {
         margin: 0;
       }
@@ -87,6 +99,9 @@
       }
       label:has([disabled]) {
         opacity: 50%;
+      }
+      .wgslError {
+        background-color: var(--error-bg-color);
       }
 
       /* remove? this is overriding lesson.css. Maybe we should remove lesson.css */
@@ -210,7 +225,7 @@ const examples = {
       let normal = normalize(vout.normal);
       var l = 0.0;
       for (var i = 0; i < 2; i++) {
-        let light = &fsUni.lights[i];
+        let light = fsUni.lights[i];
         l += clamp(dot(normal, light.direction), 0.0, 1.0);
       }
 
@@ -268,8 +283,8 @@ function updateResults(code, style) {
 }
 
 async function main(editor) {
-  const adapter = navigator.gpu?.requestAdapter();
-  const device = adapter?.requestDevice({
+  const adapter = await navigator.gpu?.requestAdapter();
+  const device = await adapter?.requestDevice({
     requiredLimits: adapter.limits,
     requiredFeatures: adapter.features,
   });
@@ -285,14 +300,47 @@ async function main(editor) {
   const processElem = document.querySelector('#process');
   processElem.addEventListener('click', process);
 
+  let decorations;
+
   async function process() {
     clearResults();
+    if (decorations) {
+      decorations.clear();
+      decorations = undefined;
+    }
+
     const code = editor.getValue();
     if (compileElem.checked && device) {
       const module = device.createShaderModule({code});
       const info = await module.getCompilationInfo();
-      const hasErrors = info.messages.reduce((err, msg) => err || msg.type === 'error', false);
-      //
+      const hasErrors = info.messages?.reduce((err, msg) => err || msg.type === 'error', false);
+      if (hasErrors) {
+        const errors = info.messages
+          .filter(msg => msg.linePos && msg.lineNum && msg.length)
+          .map(msg => ({
+            range: new monaco.Range(msg.lineNum, msg.linePos, msg.lineNum, msg.linePos + msg.length),
+            options: { inlineClassName: 'wgslError' },
+          }));
+        if (errors.length) {
+          decorations = editor.createDecorationsCollection(errors);
+          const firstError = info.messages[0];
+          editor.setPosition({
+            lineNumber: firstError.lineNum,
+            column: firstError.linePos,
+          });
+          editor.revealLineInCenterIfOutsideViewport(firstError.lineNum);
+          editor.focus();
+        }
+        errorsElem.appendChild(el(
+          'div',
+          {},
+          [
+            el('div', {textContent: 'wgsl errors:'}),
+            ...info.messages.map(msg => el('div', {textContent: `${msg.lineNum || 0}:${msg.linePos || 0}: ${msg.message}`})),
+          ],
+        ));
+        return;
+      }
     }
 
     const style = document.querySelector('input[name=style]:checked').value;
