@@ -154,7 +154,7 @@ class GridBuilder {
 
   _prepRow() {
     if (!this.currentRow || this.currentCol === this.numColumns) {
-      this.currentHeading = el('tr', { className: 'field-names'}, [el('td')]);
+      this.currentHeading = el('tr', { className: 'field-names'}, [el('td', {textContent: this.tbodyElem.children.length ? '' : 'offset'})]);
       this.currentRow = el('tr', {}, [el('td', {class: 'offset', textContent: this.tbodyElem.children.length / 2 * 16})]);
       this.tbodyElem.appendChild(this.currentHeading);
       this.tbodyElem.appendChild(this.currentRow);
@@ -283,14 +283,14 @@ export function getCodeForUniform(name, uniform, mode = 'views') {
   const template = mode === 'views'
     ? {
       decl: (name, size) => `const ${name} = new ArrayBuffer(${size});`,
-      typeArray: (name, lines) => [`const ${name}view: ${lines[0]}`, ','],
+      typedArray: (name, lines) => [`const ${name}view: ${lines[0]}`, ','],
       nonTypedArray: (name) => [`const ${name}Views = `, ';'],
       wholeBuffer: (view) => `new ${Object.getPrototypeOf(view).constructor.name}(${arrayBufferName}})`,
       buffer: (view) => `new ${Object.getPrototypeOf(view).constructor.name}(${arrayBufferName}, ${view.byteOffset}, ${view.length})`,
     }
     : {
       decl: (name, size) => `const ${name}Size = ${size}`,
-      typeArray: (name, lines) => [`const ${name}view: ${lines[0]}`, ','],
+      typedArray: (name, lines) => [`const ${name}view: ${lines[0]}`, ','],
       nonTypedArray: (name) => [`const ${name}Info = `, ';'],
       wholeBuffer: (view) => `{ type: ${Object.getPrototypeOf(view).constructor.name} }`,
       buffer: (view) => `{ type: ${Object.getPrototypeOf(view).constructor.name}, byteOffset: ${view.byteOffset}, length: ${view.length} }`,
