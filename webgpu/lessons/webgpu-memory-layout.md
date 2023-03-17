@@ -265,7 +265,7 @@ There are the sizes and alignments of the various types.
 
 But wait, there's MORE!
 
-What do you think the layout of this struct is?
+What do you think the layout of this struct will be?
 
 ```wgsl
 struct Ex3 {
