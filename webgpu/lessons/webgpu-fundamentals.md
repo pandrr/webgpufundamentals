@@ -99,11 +99,12 @@ What to notice about this diagram
 * The shaders reference resources (buffers, textures, samplers) indirectly
   through **Bind Groups**
 
-* The pipeline has attributes that reference buffers indirectly through the
+* The pipeline defines attributes that reference buffers indirectly through the
   internal state
 
-* Attributes feed data into the vertex shader, the vertex shader may feed data
-  into the fragment shader
+* Attributes pull data out of buffers and feed the data into the vertex shader.
+
+* The vertex shader may feed data into the fragment shader
 
 * The fragment shader writes to textures indirectly through the render pass
   description
@@ -114,11 +115,12 @@ interesting thing is most WebGPU resources can not be changed after creation. Yo
 can change their contents but not their size, usage, format, etc... If you want
 to change any of that stuff you create a new resource and destroy the old one.
 
-Some of the state is setup by creating and then executing command buffers. Command buffers are
-literally what their name suggests. They are a buffer of commands. You create
-encoders. The encoders encode commands into the command buffer. You then
-*finish* the encoder and it gives you the command buffer it created. You can
-then *submit* that command buffer to have WebGPU execute the commands.
+Some of the state is setup by creating and then executing command buffers.
+Command buffers are literally what their name suggests. They are a buffer of
+commands. You create encoders. The encoders encode commands into the command
+buffer. You then *finish* the encoder and it gives you the command buffer it
+created. You can then *submit* that command buffer to have WebGPU execute the
+commands.
 
 Here is some pseudo code of encoding a command buffer followed by a representation of
 the command buffer that was created.
