@@ -1,26 +1,25 @@
 /* global module */
 module.exports = {
-  'env': {
-    'browser': true,
-    'es6': true,
+  env: {
+    browser: true,
   },
   parser: '@typescript-eslint/parser',
-  'parserOptions': {
-    'sourceType': 'module',
-    'ecmaVersion': 11,
+  parserOptions: {
+    sourceType: 'module',
+    ecmaVersion: 11,
     tsconfigRootDir: __dirname,
     project: ['./jsconfig.json'],
     extraFileExtensions: ['.html'],
   },
-  'plugins': [
+  plugins: [
     '@typescript-eslint',
     'eslint-plugin-html',
     'eslint-plugin-optional-comma-spacing',
     'eslint-plugin-one-variable-per-var',
     'eslint-plugin-require-trailing-comma',
   ],
-  'extends': ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
-  'rules': {
+  extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
+  rules: {
     'no-alert': 2,
     'no-array-constructor': 2,
     'no-caller': 2,
@@ -99,14 +98,14 @@ module.exports = {
     'space-before-function-paren': [2, 'never'],
     'keyword-spacing': [1, {'before': true, 'after': true, 'overrides': {}} ],
   },
-  'overrides': [
+  overrides: [
     {
-      'files': [
+      files: [
         'Gruntfile.js',
         'fix.js',
       ],
-      'parserOptions': {
-        'sourceType': 'script',
+      parserOptions: {
+        sourceType: 'script',
       },
     },
   ],

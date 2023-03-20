@@ -86,7 +86,7 @@ will look for the data. And, back in JavaScript, you need to bind the buffers an
 textures holding your data to the bindings or locations. Once you've done that you tell the GPU to execute the
 function.
 
-Maybe a picture will help. Here is a *simplified* diagram of WebGPU setup to draw triangles
+<a id="webgpu-draw-diagram"></a>Maybe a picture will help. Here is a *simplified* diagram of WebGPU setup to draw triangles
 by using a vertex shader and a fragment shader
 
 <div class="webgpu_center"><img src="resources/webgpu-draw-diagram.svg" style="width: 960px;"></div>
@@ -426,7 +426,7 @@ any data though.
 We then tell the render pipeline to use the `vs` function from our shader module
 for a vertex shader and the `fs` function for our fragment shader. Otherwise we
 tell it the format of the first render target. "render target" means the texture
-we will render to. We haven't specified that yet but, when we create a pipeline
+we will render to. We create a pipeline
 we have to specify the format for the texture(s) we'll use this pipeline to
 eventually render to.
 
@@ -434,29 +434,50 @@ Element 0 for the `targets` array corresponds to location 0 as we specified for
 the fragment shader's return value. Later, well set that target to be a texture
 for the canvas.
 
-Now it's time to render.
+Next up we prepare a `GPURenderPassDescriptor` which describes which textures
+we want to draw and how to use them.
+
+```js
+  const renderPassDescriptor = {
+    label: 'our basic canvas renderPass',
+    colorAttachments: [
+      {
+        // view: <- to be filled out when we render
+        clearValue: [0.3, 0.3, 0.3, 1],
+        loadOp: 'clear',
+        storeOp: 'store',
+      },
+    ],
+  };  
+```
+
+A `GPURenderPassDescriptor` has an array for `colorAttachments` which lists
+the textures we will render to and how to treat the textures.
+We'll wait to fill in which texture we actually want to render to. For now,
+we setup a clear value of semi-dark gray, and a `loadOp` and `storeOp`.
+`loadOp: 'clear'` specifies to clear the texture to the clear value before
+drawing. The other option is `'load'` which means load the existing contents of
+the texture into the GPU so we can draw over what's already there. 
+`storeOp: 'store'` means store the result of what we draw. We could also pass `'discard'`
+which would throw away what we draw. We'll cover why we might want to do that in
+[another article](webgpu-multisampling.html).
+
+Now it's time to render. 
 
 ```js
   function render() {
-    const encoder = device.createCommandEncoder({
-      label: 'our encoder',
-    });
-    const pass = encoder.beginRenderPass({
-      label: 'our basic canvas renderPass',
-      colorAttachments: [
-        {
-          view: context.getCurrentTexture().createView(),
-          clearValue: [0.3, 0.3, 0.3, 1],
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    });
+    // Get the current texture from the canvas context and
+    // set it as the texture to render to.
+    renderPassDescriptor.colorAttachments[0].view =
+        context.getCurrentTexture().createView();
+
+    // make a command encoder to start encoding commands
+    const encoder = device.createCommandEncoder({ label: 'our encoder' });
+
+    // make a render pass encoder to encode render specific commands
+    const pass = encoder.beginRenderPass(renderPassDescriptor);
     pass.setPipeline(pipeline);
-
-    const iterationCount = 3;
-    pass.draw(iterationCount);
-
+    pass.draw(3);  // call our vertex shader 3 times
     pass.end();
 
     const commandBuffer = encoder.finish();
@@ -466,28 +487,17 @@ Now it's time to render.
   render();
 ```
 
-First we create a command encoder. A command encoder is used to create a command
-buffer. We use it to encode commands and then "submit" it to have the commands
-executed.
-
-Our first command is `beginRenderPass` which we need to pass an array of
-`colorAttachments`. In this case our only attachment is a texture view from our
+First we call `context.getCurrentTexture()` to get a texture that will appear in the
+canvas. Calling `createView` gets a view into a specific part of a texture but
+with no parameters it will return the default part which is what we want in this
+case. In this case our only `colorAttachment` is a texture view from our
 canvas which we get via the context we created at the start. Again, element 0 of
 the `colorAttachments` array corresponds to `location(0)` as we specified for
 the return value of the fragment shader.
 
-Calling `context.getCurrentTexture()` gets a texture that will appear in the
-canvas. Calling `createView` gets a view into a specific part of a texture but
-with no parameters it will return the default part which is what we want in this
-case.
-
-We also setup a clear value of semi-dark gray, and a `loadOp` and `storeOp`.
-`loadOp: 'clear'` specifies to clear the texture to the clear value before
-drawing. The other option is `'load'` which means load the existing contents of
-the texture into the GPU so we can draw over what's already there. `storeOp:
-'store'` means store the result of what we draw. We could also pass `'discard'`
-which would throw away what we draw. We'll cover why we might want to do that in
-[another article](webgpu-multisampling.html).
+Next we create a command encoder. A command encoder is used to create a command
+buffer. We use it to encode commands and then "submit" the command buffer it
+created to have the commands executed.
 
 We encode the command, `setPipeline`, to set our pipeline and then tell it to
 execute our vertex shader 3 times by calling `draw` with 3. By default, every 3

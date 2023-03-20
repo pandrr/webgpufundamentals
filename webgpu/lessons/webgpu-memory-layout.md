@@ -11,7 +11,7 @@ In WGSL when you write your shaders, it's common to define `struct`s.
 Structs are kind of line JavaScript objects, you declare members of
 a struct, similar to properties of a JavaScript object. But, on top
 of giving each property a name, you also have to give it a type.
-**AND**, when providing the data it's up to you to compute where
+**AND**, when providing the data **it's up to you** to compute where
 in a buffer that particular member of the struct will appear.
 
 In [WGSL](webgpu-wgsl.html) v1, there are 4 base types
@@ -66,7 +66,7 @@ values. `ourStructValuesAsU32` is a view of **the same memory** as
 
 Now that we have a buffer and 2 views we can set the data in the structure.
 
-```
+```js
 const kVelocityOffset = 0;
 const kAccelerationOffset = 1;
 const kFrameCountOffset = 2;
@@ -239,7 +239,7 @@ They are:
   </table>
 </div>
 
-Given that a `vec3f` is an type with 3 `f32`s and
+Given that a `vec3f` is a type with 3 `f32`s and
 `mat4x4f` is an 4x4 matrix of `f32`s, so it's 16 `f32`s,
 what do think the following struct looks like in memory?
 
@@ -259,7 +259,7 @@ What's up with that? It turns out every type as alignment requirements.
 For a given type it must be aligned to a multiple of a certain number
 of bytes.
 
-There are the sizes and alignments of the various types.
+Here are the sizes and alignments of the various types.
 
 <div class="webgpu_center data-table" data-diagram="wgslTypeTable"></div>
 

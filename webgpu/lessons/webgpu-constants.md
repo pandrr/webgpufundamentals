@@ -296,10 +296,7 @@ Now it's time to render.
       ],
     });
     pass.setPipeline(pipeline);
-
-    const iterationCount = 3;
-    pass.draw(iterationCount);
-
+    pass.draw(3);  // call our vertex shader 3 times
     pass.end();
 
     const commandBuffer = encoder.finish();
