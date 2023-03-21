@@ -19,6 +19,9 @@ canvas {
     <canvas></canvas>
   </body>
   <script type="module">
+// A random number between [min and max)
+// With 1 argument it will be [0 to min)
+// With no arguments it will be [0 to 1)
 const rand = (min, max) => {
   if (min === undefined) {
     min = 0;
