@@ -103,8 +103,7 @@ async function main() {
     2 * 4 + // offset is 2 32bit floats (4bytes each)
     2 * 4;  // padding
   const uniformBufferSize =
-    2 * 4 + // scale is 2 32bit floats (4bytes each)
-    0 * 4;  // padding
+    2 * 4;  // scale is 2 32bit floats (4bytes each)
 
   // offsets to the various uniform values in float32 indices
   const kColorOffset = 0;
@@ -122,6 +121,7 @@ async function main() {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
+    // These are only set once so set them now
     {
       const uniformValues = new Float32Array(staticUniformBufferSize / 4);
       uniformValues.set([rand(), rand(), rand(), 1], kColorOffset);        // set the color

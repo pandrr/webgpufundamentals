@@ -359,13 +359,13 @@ scale.
 
 Again, remember that the `encoder` and `pass` objects are just encoding commands
 into a command buffer. So when the `render` function exists we've effectively
-issued these *commands*.
+issued these *commands* in this order.
 
 ```js
 device.queue.writeBuffer(...) // update uniform buffer 0 with data for object 0
-device.queue.writeBuffer(...) // update uniform buffer 0 with data for object 1
-device.queue.writeBuffer(...) // update uniform buffer 0 with data for object 2
-device.queue.writeBuffer(...) // update uniform buffer 0 with data for object ...
+device.queue.writeBuffer(...) // update uniform buffer 1 with data for object 1
+device.queue.writeBuffer(...) // update uniform buffer 2 with data for object 2
+device.queue.writeBuffer(...) // update uniform buffer 3 with data for object 3
 ...
 // execute commands that draw 100 things, each with their own uniform buffer.
 device.queue.submit([commandBuffer]);
@@ -384,4 +384,137 @@ color and offset are not, so we're wasting time uploading color and offset.
 We could split the uniforms into uniforms that need to be set once and uniforms
 that are updated each time we draw.
 
+```js
+  const module = device.createShaderModule({
+    code: `
+      struct OurUniforms {
+        color: vec4f,
+-        scale: vec2f,
+        offset: vec2f,
+      };
 
++      struct OtherUniforms {
++        scale: vec2f,
++      };
+
+      @group(0) @binding(0) var<uniform> ourUniforms: OurUniforms;
++      @group(0) @binding(1) var<uniform> otherUniforms: OtherUniforms;
+
+      @vertex fn vs(
+        @builtin(vertex_index) vertexIndex : u32
+      ) -> @builtin(position) vec4f {
+        var pos = array<vec2f, 3>(
+          vec2f( 0.0,  0.5),  // top center
+          vec2f(-0.5, -0.5),  // bottom left
+          vec2f( 0.5, -0.5)   // bottom right
+        );
+
+        return vec4f(
+-          pos[vertexIndex] * ourUniforms.scale + ourUniforms.offset, 0.0, 1.0);
++          pos[vertexIndex] * otherUniforms.scale + ourUniforms.offset, 0.0, 1.0);
+      }
+
+      @fragment fn fs() -> @location(0) vec4f {
+        return ourUniforms.color;
+      }
+    `,
+  });
+```
+
+When we'd need 2 uniform buffers per thing we want to draw
+
+```js
+-  // create a buffer for the uniform values
+-  const uniformBufferSize =
+-    4 * 4 + // color is 4 32bit floats (4bytes each)
+-    2 * 4 + // scale is 2 32bit floats (4bytes each)
+-    2 * 4;  // offset is 2 32bit floats (4bytes each)
+-  // offsets to the various uniform values in float32 indices
+-  const kColorOffset = 0;
+-  const kScaleOffset = 4;
+-  const kOffsetOffset = 6;
++  // create 2 buffers for the uniform values
++  const staticUniformBufferSize =
++    4 * 4 + // color is 4 32bit floats (4bytes each)
++    2 * 4 + // offset is 2 32bit floats (4bytes each)
++    2 * 4;  // padding
++  const uniformBufferSize =
++    2 * 4;  // scale is 2 32bit floats (4bytes each)
++
++  // offsets to the various uniform values in float32 indices
++  const kColorOffset = 0;
++  const kOffsetOffset = 4;
++
++  const kScaleOffset = 0;
+
+  const kNumObjects = 100;
+  const objectInfos = [];
+
+  for (let i = 0; i < kNumObjects; ++i) {
++    const staticUniformBuffer = device.createBuffer({
++      label: `static uniforms for obj: ${i}`,
++      size: staticUniformBufferSize,
++      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
++    });
++
++    // These are only set once so set them now
++    {
+-      const uniformValues = new Float32Array(uniformBufferSize / 4);
++      const uniformValues = new Float32Array(staticUniformBufferSize / 4);
+      uniformValues.set([rand(), rand(), rand(), 1], kColorOffset);        // set the color
+      uniformValues.set([rand(-0.9, 0.9), rand(-0.9, 0.9)], kOffsetOffset);      // set the offset
+
+      // copy these values to the GPU
+-      device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
++      device.queue.writeBuffer(staticUniformBuffer, 0, uniformValues);
+    }
+
++    // create a typedarray to hold the values for the uniforms in JavaScript
++    const uniformValues = new Float32Array(uniformBufferSize / 4);
++    const uniformBuffer = device.createBuffer({
++      label: `changing uniforms for obj: ${i}`,
++      size: uniformBufferSize,
++      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
++    });
+
+    const bindGroup = device.createBindGroup({
+      label: `bind group for obj: ${i}`,
+      layout: pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: staticUniformBuffer }},
++        { binding: 1, resource: { buffer: uniformBuffer }},
+      ],
+    });
+
+    objectInfos.push({
+      scale: rand(0.2, 0.5),
+      uniformBuffer,
+      uniformValues,
+      bindGroup,
+    });
+  }
+```
+
+Nothing changes in our render code. The bind group for each object contains
+a reference to both uniform buffers for each object. Just as before we are
+updating the scale. But now we're only uploading the scale when we call
+`device.queue.writeBuffer` to update the uniform buffer that holds the scale value
+whereas before we were uploading the color + offset + scale for each object.
+
+{{{example url="../webgpu-simple-triangle-uniforms-split.html"}}}
+
+While in this simple example, splitting into multiple uniform buffers was probably
+overkill, it's common to split based on what changes and when. Examples might include
+one uniform buffer for matrices that are shared. For example a project matrix, a view
+matrix, a camera matrix. Since often these are the same for all things we want to draw
+we can just make one buffer and have all objects use the same uniform buffer.
+
+Separately our shader might reference another uniform buffer that contains just the
+things that are specific to this object like its world / model matrix and it's normal matrix.
+
+Another uniform buffer might contain material settings. Those settings might be shared
+by multiple objects.
+
+We'll do much of this when we cover drawing 3D.
+
+Next up, [storage buffers](webgpu-storage-buffers.html)
