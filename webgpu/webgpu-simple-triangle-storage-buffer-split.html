@@ -53,12 +53,12 @@ async function main() {
 
   const module = device.createShaderModule({
     code: `
-      struct OurStorage {
+      struct OurStruct {
         color: vec4f,
         offset: vec2f,
       };
 
-      struct OtherStorage {
+      struct OtherStruct {
         scale: vec2f,
       };
 
@@ -67,8 +67,8 @@ async function main() {
         @location(0) color: vec4f,
       }
 
-      @group(0) @binding(0) var<storage, read> ourStorage: array<OurStorage>;
-      @group(0) @binding(1) var<storage, read> otherStorage: array<OtherStorage>;
+      @group(0) @binding(0) var<storage, read> ourStructs: array<OurStruct>;
+      @group(0) @binding(1) var<storage, read> otherStructs: array<OtherStruct>;
 
       @vertex fn vs(
         @builtin(vertex_index) vertexIndex : u32,
@@ -80,13 +80,13 @@ async function main() {
           vec2f( 0.5, -0.5)   // bottom right
         );
 
-        let otherUniforms = otherStorage[instanceIndex];
-        let ourUniforms = ourStorage[instanceIndex];
+        let otherStruct = otherStructs[instanceIndex];
+        let ourStruct = ourStructs[instanceIndex];
 
         var vsOut: VSOutput;
         vsOut.position = vec4f(
-            pos[vertexIndex] * otherUniforms.scale + ourUniforms.offset, 0.0, 1.0);
-        vsOut.color = ourUniforms.color;
+            pos[vertexIndex] * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
+        vsOut.color = ourStruct.color;
         return vsOut;
       }
 
@@ -111,7 +111,7 @@ async function main() {
 
   const kNumObjects = 100;
 
-  // create 2 buffers for the uniform values
+  // create 2 storage buffers
   const staticStorageUnitSize =
     4 * 4 + // color is 4 32bit floats (4bytes each)
     2 * 4 + // offset is 2 32bit floats (4bytes each)

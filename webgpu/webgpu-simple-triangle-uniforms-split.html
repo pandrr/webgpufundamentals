@@ -53,17 +53,17 @@ async function main() {
 
   const module = device.createShaderModule({
     code: `
-      struct OurUniforms {
+      struct OurStruct {
         color: vec4f,
         offset: vec2f,
       };
 
-      struct OtherUniforms {
+      struct OtherStruct {
         scale: vec2f,
       };
 
-      @group(0) @binding(0) var<uniform> ourUniforms: OurUniforms;
-      @group(0) @binding(1) var<uniform> otherUniforms: OtherUniforms;
+      @group(0) @binding(0) var<uniform> ourStruct: OurStruct;
+      @group(0) @binding(1) var<uniform> otherStruct: OtherStruct;
 
       @vertex fn vs(
         @builtin(vertex_index) vertexIndex : u32
@@ -75,11 +75,11 @@ async function main() {
         );
 
         return vec4f(
-          pos[vertexIndex] * otherUniforms.scale + ourUniforms.offset, 0.0, 1.0);
+          pos[vertexIndex] * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
       }
 
       @fragment fn fs() -> @location(0) vec4f {
-        return ourUniforms.color;
+        return ourStruct.color;
       }
     `,
   });

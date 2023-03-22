@@ -16,13 +16,13 @@ We'll start again with the triangle example from [the first article](webgpu-fund
   const module = device.createShaderModule({
     label: 'triangle shaders with uniforms',
     code: `
-+      struct OurUniforms {
++      struct OurStruct {
 +        color: vec4f,
 +        scale: vec2f,
 +        offset: vec2f,
 +      };
 +
-+      @group(0) @binding(0) var<uniform> ourUniforms: OurUniforms;
++      @group(0) @binding(0) var<uniform> ourStruct: OurStruct;
 
       @vertex fn vs(
         @builtin(vertex_index) vertexIndex : u32
@@ -35,12 +35,12 @@ We'll start again with the triangle example from [the first article](webgpu-fund
 
 -        return vec4f(pos[vertexIndex], 0.0, 1.0);
 +        return vec4f(
-+          pos[vertexIndex] * ourUniforms.scale + ourUniforms.offset, 0.0, 1.0);
++          pos[vertexIndex] * ourStruct.scale + ourStruct.offset, 0.0, 1.0);
       }
 
       @fragment fn fs() -> @location(0) vec4f {
 -        return vec4f(1, 0, 0, 1);
-+        return ourUniforms.color;
++        return ourStruct.color;
       }
     `,
   });
@@ -51,7 +51,7 @@ We'll start again with the triangle example from [the first article](webgpu-fund
 First we declared a struct with 3 members
 
 ```wsgl
-      struct OurUniforms {
+      struct OurStruct {
         color: vec4f,
         scale: vec2f,
         offset: vec2f,
@@ -59,10 +59,10 @@ First we declared a struct with 3 members
 ```
 
 Then we declared a uniform variable with a type of that struct.
-The variable is `ourUniforms` and its type is `OurUniforms`.
+The variable is `ourStruct` and its type is `OurStruct`.
 
 ```wsgl
-      @group(0) @binding(0) var<uniform> ourUniforms: OurUniforms;
+      @group(0) @binding(0) var<uniform> ourStruct: OurStruct;
 ```
 
 Next we changed what is returned from the vertex shader to use
@@ -74,7 +74,7 @@ the uniforms
       ) ... {
         ...
         return vec4f(
-          pos[vertexIndex] * ourUniforms.scale + ourUniforms.offset, 0.0, 1.0);
+          pos[vertexIndex] * ourStruct.scale + ourStruct.offset, 0.0, 1.0);
       }
 ```
 
@@ -85,7 +85,7 @@ We also change the fragment shader to return the color from our uniforms
 
 ```wgsl
       @fragment fn fs() -> @location(0) vec4f {
-        return ourUniforms.color;
+        return ourStruct.color;
       }
 ```
 
@@ -387,18 +387,18 @@ that are updated each time we draw.
 ```js
   const module = device.createShaderModule({
     code: `
-      struct OurUniforms {
+      struct OurStruct {
         color: vec4f,
 -        scale: vec2f,
         offset: vec2f,
       };
 
-+      struct OtherUniforms {
++      struct OtherStruct {
 +        scale: vec2f,
 +      };
 
-      @group(0) @binding(0) var<uniform> ourUniforms: OurUniforms;
-+      @group(0) @binding(1) var<uniform> otherUniforms: OtherUniforms;
+      @group(0) @binding(0) var<uniform> ourStruct: OurStruct;
++      @group(0) @binding(1) var<uniform> otherStruct: OtherStruct;
 
       @vertex fn vs(
         @builtin(vertex_index) vertexIndex : u32
@@ -410,12 +410,12 @@ that are updated each time we draw.
         );
 
         return vec4f(
--          pos[vertexIndex] * ourUniforms.scale + ourUniforms.offset, 0.0, 1.0);
-+          pos[vertexIndex] * otherUniforms.scale + ourUniforms.offset, 0.0, 1.0);
+-          pos[vertexIndex] * ourStruct.scale + ourStruct.offset, 0.0, 1.0);
++          pos[vertexIndex] * otherStruct.scale + ourStruct.offset, 0.0, 1.0);
       }
 
       @fragment fn fs() -> @location(0) vec4f {
-        return ourUniforms.color;
+        return ourStruct.color;
       }
     `,
   });
