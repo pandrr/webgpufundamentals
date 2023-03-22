@@ -168,6 +168,7 @@ frameCountView[0] = 56;
 They are:
 
 <div class="webgpu_center data-table">
+  <div>
   <style>
     .wgsl-types tr:nth-child(5n) { height: 1em };
   </style>
@@ -237,6 +238,7 @@ They are:
       <tr><td><code>mat4x4&lt;f16&gt;</code></td></td><td>a matrix of 4 <code>vec4&lt;f16&gt;</code>s</td><td><code>mat2x2h</code></td></tr>
     </tbody>
   </table>
+  </div>
 </div>
 
 Given that a `vec3f` is a type with 3 `f32`s and
@@ -261,7 +263,7 @@ of bytes.
 
 Here are the sizes and alignments of the various types.
 
-<div class="webgpu_center data-table" data-diagram="wgslTypeTable"></div>
+<div class="webgpu_center data-table"><div data-diagram="wgslTypeTable" style="width: 95%; columns: 14em;"></div></div>
 
 But wait, there's MORE!
 

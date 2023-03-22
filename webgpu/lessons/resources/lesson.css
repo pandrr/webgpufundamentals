@@ -642,13 +642,16 @@ pre.prettyprint.lighttheme .fun { color: #900; }  /* function name */
 
 /* ---- data table ---- */
 
+.data-table>div {
+  display: inline-block;
+}
 .data-table table {
   border-collapse: collapse;
-  display: inline-block;
   font-family: monospace;
 }
 .data-table thead {
   background-color: var(--table-head-bg-color);
+  break-inside: avoid;
 }
 .data-table tr:nth-child(even) {
   background-color: var(--table-even-bg-color)
