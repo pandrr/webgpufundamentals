@@ -116,7 +116,7 @@ passed in a color that interpolated between all 3 points.
 Inter-stage variables are most often used to interpolate texture coordinates
 across a triangle which we'll cover in [the article on textures](webgpu-textures.html).
 Another common use is interpolating normals cross a triangle which will cover
-in [the first article on lighting](webgpu-directional-lighting.html).
+in [the first article on lighting](webgpu-lighting-directional.html).
 
 ## Inter-stage variables connect by `location`
 

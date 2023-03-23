@@ -6,10 +6,13 @@
     "buildwatch",
     "Gruntfile",
     "hackiest",
+    "MSAA",
+    "Multisampling",
     "nonull",
     "rasterizes",
     "rdparty",
     "showmods",
-    "structs"
+    "structs",
+    "viewbox"
   ]
 }

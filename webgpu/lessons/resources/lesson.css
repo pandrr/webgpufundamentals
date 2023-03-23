@@ -321,6 +321,11 @@ code {
   margin-right: auto;
 }
 
+.center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 .webgpu_center {
   margin-left: auto;
   margin-top: 1em;

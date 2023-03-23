@@ -21,7 +21,7 @@ In [WGSL](webgpu-wgsl.html) v1, there are 4 base types
 * `u32` (a 32bit unsigned integer)
 * `f16` (a 16bit floating point number) [^f16-optional]
 
-[^f16-optional]: `f16` support is an [optional feature](webgpu-optional-features.html)
+[^f16-optional]: `f16` support is an [optional feature](webgpu-limits-and-features.html)
 
 A byte is 8 bits so a 32 bit value takes 4 bytes and a 16 bit value takes 2 bytes.
 
@@ -385,4 +385,5 @@ I'd rather use a library and avoid that pain.
 If you do want to do it manually though, 
 [here's a page that will compute the offsets for you](wgsl-offset-computer.html)
 
+<!-- keep this at the bottom of the article -->
 <script type="module" src="webgpu-memory-layout.js"></script>

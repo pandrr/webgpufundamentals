@@ -1,8 +1,15 @@
 # To Do
 
-- [ ] Use external refs in build
+- [X] Use external refs in build
   - [ ] Figure out how to check for device.fn, encoder.fn, pass.fn
-- [ ] Fix code gen double output for non-struct
+- [X] Fix code gen double output for non-struct
+
+- [ ] Get webgpu types in live-editor
+- [ ] Get eslint to run correctly
+  - [ ] recognize WebGPU types
+- [ ] Re-style
+  - [ ] `<code>stuff</code>`
+  - [ ] type table
 
 - [ ] explain opaque/premultiplied canvas
 - [ ] explain typedarrays
@@ -72,3 +79,4 @@
 - [ ] drawimage
 
 - [ ] compute 
+  - [ ] prefix-sum
