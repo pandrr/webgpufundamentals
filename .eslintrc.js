@@ -1,4 +1,5 @@
 /* global module */
+/* global __dirname */
 module.exports = {
   env: {
     browser: true,
@@ -20,7 +21,7 @@ module.exports = {
   ],
   extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
   rules: {
-    'no-alert': 2,
+    // 'no-alert': 2,
     'no-array-constructor': 2,
     'no-caller': 2,
     'no-catch-shadow': 2,
@@ -53,8 +54,8 @@ module.exports = {
     'no-undef-init': 2,
     'no-unused-expressions': 2,
     'no-use-before-define': 0,
-    'no-unused-vars': ["error", { "argsIgnorePattern": "^_" }],
-    '@typescript-eslint/no-unused-vars': ["error", { "argsIgnorePattern": "^_" }],
+    'no-unused-vars': ['error', { 'argsIgnorePattern': '^_' }],
+    '@typescript-eslint/no-unused-vars': ['error', { 'argsIgnorePattern': '^_' }],
     'no-var': 2,
     'no-with': 2,
     'prefer-const': 2,
