@@ -85,6 +85,7 @@ async function main() {
   });
 
   const pipeline = device.createRenderPipeline({
+    label: 'storage buffer like uniform',
     layout: 'auto',
     vertex: {
       module,

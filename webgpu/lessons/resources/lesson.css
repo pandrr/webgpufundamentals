@@ -649,6 +649,7 @@ pre.prettyprint.lighttheme .fun { color: #900; }  /* function name */
 
 .data-table>div {
   display: inline-block;
+  text-align: left;
 }
 .data-table table {
   border-collapse: collapse;
@@ -661,6 +662,7 @@ pre.prettyprint.lighttheme .fun { color: #900; }  /* function name */
 .data-table tr:nth-child(even) {
   background-color: var(--table-even-bg-color)
 }
+.data-table th,
 .data-table td {
   padding: 0.2em;
   border: 1px solid var(--byte-border-color);

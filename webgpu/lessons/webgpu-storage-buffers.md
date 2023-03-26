@@ -365,7 +365,14 @@ function createCircleVertices({
   endAngle = Math.PI * 2,
 } = {}) {
   // 2 triangles per subdivision, 3 verts per tri, 2 values (xy) each.
-  const positions = new Float32Array(numSubdivisions * 2 * 3 * 2);
+  const numVertices = numSubdivisions * 3 * 2;
+  const vertexData = new Float32Array(numSubdivisions * 2 * 3 * 2);
+
+  let offset = 0;
+  const addVertex = (x, y) => {
+    vertexData[offset++] = x;
+    vertexData[offset++] = y;
+  };
 
   // 2 vertices per subdivision
   //
@@ -374,7 +381,6 @@ function createCircleVertices({
   // |/ / |
   // 2 3--5
   for (let i = 0; i < numSubdivisions; ++i) {
-    const offset = i * 6 * 2;
     const angle1 = startAngle + (i + 0) * (endAngle - startAngle) / numSubdivisions;
     const angle2 = startAngle + (i + 1) * (endAngle - startAngle) / numSubdivisions;
 
@@ -384,23 +390,19 @@ function createCircleVertices({
     const s2 = Math.sin(angle2);
 
     // first triangle
-    positions[offset +  0] = c1 * radius;
-    positions[offset +  1] = s1 * radius;
-    positions[offset +  2] = c2 * radius;
-    positions[offset +  3] = s2 * radius;
-    positions[offset +  4] = c1 * innerRadius;
-    positions[offset +  5] = s1 * innerRadius;
+    addVertex(c1 * radius, s1 * radius);
+    addVertex(c2 * radius, s2 * radius);
+    addVertex(c1 * innerRadius, s1 * innerRadius);
 
-    positions[offset +  6] = c1 * innerRadius;
-    positions[offset +  7] = s1 * innerRadius;
-    positions[offset +  8] = c2 * radius;
-    positions[offset +  9] = s2 * radius;
-    positions[offset + 10] = c2 * innerRadius;
-    positions[offset + 11] = s2 * innerRadius;
+    // second triangle
+    addVertex(c1 * innerRadius, s1 * innerRadius);
+    addVertex(c2 * radius, s2 * radius);
+    addVertex(c2 * innerRadius, s2 * innerRadius);
   }
 
   return {
-    positions,
+    vertexData,
+    numVertices,
   };
 }
 ```
@@ -412,16 +414,17 @@ The code above makes a circle from triangles like this
 So we can use that to fill a storage buffer with the vertices for a circle
 
 ```js
-  const vertexData = createCircleVertices({
+  // setup a storage buffer with vertex data
+  const { vertexData, numVertices } = createCircleVertices({
     radius: 0.5,
     innerRadius: 0.25,
   });
   const vertexStorageBuffer = device.createBuffer({
     label: 'storage buffer vertices',
-    size: vertexData.positions.byteLength,
+    size: vertexData.byteLength,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
-  device.queue.writeBuffer(vertexStorageBuffer, 0, vertexData.positions);
+  device.queue.writeBuffer(vertexStorageBuffer, 0, vertexData);
 ```
 
 And then we need to add it to our bind group.
@@ -442,7 +445,7 @@ and finally at render time we need to ask to render all the vertices in the circ
 
 ```js
 -    pass.draw(3, kNumObjects);  // call our vertex shader 3 times for several instances
-+    pass.draw(vertexData.positions.length / 2, kNumObjects);
++    pass.draw(numVertices, kNumObjects);
 ```
 
 {{{example url="../webgpu-storage-buffer-vertices.html"}}}

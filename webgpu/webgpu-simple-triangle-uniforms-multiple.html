@@ -81,6 +81,7 @@ async function main() {
   });
 
   const pipeline = device.createRenderPipeline({
+    label: 'multiple uniforms',
     layout: 'auto',
     vertex: {
       module,

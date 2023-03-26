@@ -140,6 +140,7 @@ async function main() {
   const shaderModule = device.createShaderModule({code: shaderSrc});
 
   const pipeline = device.createRenderPipeline({
+    label: 'fake lighting',
     layout: 'auto',
     vertex: {
       module: shaderModule,

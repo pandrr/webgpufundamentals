@@ -97,6 +97,7 @@ async function main() {
   });
 
   const pipeline = device.createRenderPipeline({
+    label: 'split storage buffer pipeline',
     layout: 'auto',
     vertex: {
       module,

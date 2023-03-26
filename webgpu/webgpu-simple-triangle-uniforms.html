@@ -67,6 +67,7 @@ async function main() {
   });
 
   const pipeline = device.createRenderPipeline({
+    label: 'triangle with uniforms',
     layout: 'auto',
     vertex: {
       module,
