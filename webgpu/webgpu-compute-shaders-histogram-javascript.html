@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>WebGPU Compute Shaders - Histogram (JavaScript</title>
+    <style>
+      @import url(resources/webgpu-lesson.css);
+      img {
+        max-width: 400px;
+      }
+      canvas {
+        display: block;
+        border: 1px solid #888;
+      }
+    </style>
+  </head>
+  <body>
+  </body>
+  <script type="module">
+async function main() {
+  const img = new Image();
+  img.src = 'resources/images/pexels-francesco-ungaro-96938-sm.jpg';
+  await img.decode();
+
+  document.body.appendChild(img);
+
+  const rgb = (r, g, b) => `rgb(${r * 255}, ${g * 255}, ${b * 255})`;
+
+  //const imgData = getImageData(img);
+  const imgData = (function() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    for (let i = 0; i < 256; ++i) {
+      ctx.fillStyle = rgb(0, i / 255, 0);
+      ctx.fillRect(i, 0, 1, i);
+    }
+    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  })();
+
+
+  const histogram = computeHistogram(256, imgData);
+  console.log(histogram);
+  drawHistogram(histogram);
+}
+
+function computeHistogram(numBuckets, imgData) {
+  const {width, height, data} = imgData;
+  const histogram = new Array(numBuckets * 4).fill(0);
+  for (let y = 0; y < height; ++y) {
+    for (let x = 0; x < width; ++x) {
+      const offset = (y * width + x) * 4;
+      for (let ch = 0; ch < 4; ++ch) {
+        if (ch !== 1) {
+          continue;
+        }
+        const v = ch < 3
+           ? data[offset + ch] / 255
+           : luminance(data, offset);
+        const bucket = Math.min(numBuckets - 1, v * numBuckets) | 0;
+        if (y === 0) {
+          console.log(x, offset, bucket, v);
+        }
+        ++histogram[bucket * 4 + ch];
+      }
+    }
+  }
+  return histogram;
+}
+
+function drawHistogram(histogram, height = 100) {
+  const numBuckets = histogram.length / 4;
+  const canvas = document.createElement('canvas');
+  canvas.width = numBuckets;
+  canvas.height = height;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+
+  const colors = [
+    'rgb(255, 0, 0)',
+    'rgb(0, 255, 0)',
+    'rgb(0, 0, 255)',
+    'rgb(128, 128, 128)',
+  ];
+
+histogram[1] = 0;
+
+  ctx.globalCompositeOperation = 'screen';
+
+  // find the highest value for each channel
+  const max = [0, 0, 0, 0];
+  const total = [0, 0, 0, 0];
+  histogram.forEach((v, i) => {
+    if (i < 4) {
+      return;
+    }
+    const ch = i % 4;
+    max[ch] = Math.max(max[ch], v);
+    total[ch] += v;
+  });
+  console.log('total:', total);
+
+  for (let x = 0; x < numBuckets; ++x) {
+    const offset = x * 4;
+    for (let ch = 0; ch < 4; ++ch) {
+      if (ch !== 1) {
+        continue;
+      }
+      const v = histogram[offset + ch] / max[ch] * height;// / (total[ch] - histogram[ch]);
+      ctx.fillStyle = colors[ch];
+      ctx.fillRect(x, height - v, 1, v);
+    }
+  }
+}
+
+// from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
+function luminance(data, offset) {
+  const r = data[offset + 0];
+  const g = data[offset + 1];
+  const b = data[offset + 2];
+
+  const l = r * 0.2126 / 255 +
+            g * 0.7152 / 255 +
+            b * 0.0722 / 255;
+  return l;
+}
+
+/*
+function getImageData(img) {
+  const canvas = document.createElement('canvas');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+*/
+
+main();
+  </script>
+</html>
