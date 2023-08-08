@@ -36,6 +36,7 @@ async function main() {
   }
 
   const timingHelper = new TimingHelper(device);
+  const timingHelper2 = new TimingHelper(device);
 
   // Get a WebGPU context from the canvas and configure it
   const canvas = document.querySelector('canvas');
@@ -46,10 +47,11 @@ async function main() {
     format: presentationFormat,
       });
 
-  const module = device.createShaderModule({
-    label: 'histogram shader',
+  const histogramChunkModule = device.createShaderModule({
+    label: 'histogram chunk shader',
     code: `
-      @group(0) @binding(0) var<workgroup, read_write> histogram: array<array<atomic<u32>, 4>>;
+      var<workgroup> histogram: array<array<atomic<u32>, 4>, 256>;
+      @group(0) @binding(0) var<storage, read_write> histogramChunks: array<array<vec4u, 256>>;
       @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
       const kSRGBLuminanceFactors = vec3f(0.2126, 0.7152, 0.0722);
@@ -57,9 +59,13 @@ async function main() {
         return saturate(dot(color, kSRGBLuminanceFactors));
       }
 
-      @compute @workgroup_size(64, 64, 1) fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
-        let position = global_invocation_id.xy;
-        let numBins = f32(arrayLength(&histogram));
+      @compute @workgroup_size(256, 1, 1) fn cs(
+        @builtin(workgroup_id) workgroup_id: vec3u,
+        @builtin(local_invocation_id) local_invocation_id: vec3u,
+      ) {
+        let position = workgroup_id.xy * vec2u(256,1) + 
+                       local_invocation_id.xy;
+        let numBins = f32(256); //arrayLength(&histogram));
         let lastBinIndex = u32(numBins - 1);
         let color = textureLoad(ourTexture, position, 0);
         let luminance = srgbLuminance(color.rgb);
@@ -68,15 +74,57 @@ async function main() {
           let ndx = min(u32(v * numBins), lastBinIndex);
           atomicAdd(&histogram[ndx][i], 1u);
         }
+
+        workgroupBarrier();
+
+        let size = textureDimensions(ourTexture, 0);
+        let chunksAcross = (size.x + 255) / 256;
+        let chunk = workgroup_id.y * chunksAcross + workgroup_id.x;
+
+        histogramChunks[chunk][local_invocation_id.x] = vec4u(
+          atomicLoad(&histogram[local_invocation_id.x][0]),
+          atomicLoad(&histogram[local_invocation_id.x][1]),
+          atomicLoad(&histogram[local_invocation_id.x][2]),
+          atomicLoad(&histogram[local_invocation_id.x][3]),
+        );
       }
     `,
   });
 
-  const pipeline = device.createComputePipeline({
+  const chunkSumModule = device.createShaderModule({
+    label: 'chunk sum shader',
+    code: `
+      @group(0) @binding(0) var<storage, read> histogramChunks: array<array<vec4u, 256>>;
+      @group(0) @binding(1) var<storage, read_write> histogram: array<vec4u, 256>;
+
+      @compute @workgroup_size(256, 1, 1) fn cs(
+        @builtin(local_invocation_id) local_invocation_id: vec3u,
+      ) {
+        var sum = vec4u(0);
+        let numChunks = arrayLength(&histogramChunks);
+        for (var i = 0u; i < numChunks; i++) {
+          sum += histogramChunks[i][local_invocation_id.x];
+        }
+        histogram[local_invocation_id.x] = sum;
+      }
+    `,
+  });
+
+
+  const histogramChunkPipeline = device.createComputePipeline({
     label: 'histogram',
     layout: 'auto',
     compute: {
-      module,
+      module: histogramChunkModule,
+      entryPoint: 'cs',
+    },
+  });
+
+  const chunkSumPipeline = device.createComputePipeline({
+    label: 'chunk sum',
+    layout: 'auto',
+    compute: {
+      module: chunkSumModule,
       entryPoint: 'cs',
     },
   });
@@ -98,16 +146,35 @@ async function main() {
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
   });
 
+  const chunkWidth = 256;
+  const chunkHeight = 1;
+  const chunksAcross = Math.ceil(texture.width / chunkWidth);
+  const chunksDown = Math.ceil(texture.height / chunkHeight);
+  const numChunks = chunksAcross * chunksDown;
+  console.log(numChunks, chunksAcross, chunksDown);
+  const histogramChunksBuffer = device.createBuffer({
+    size: numChunks * 256 * 4 * 4,
+    usage: GPUBufferUsage.STORAGE,
+  });
+
   const resultBuffer = device.createBuffer({
     size: histogramBuffer.size,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
 
-  const bindGroup = device.createBindGroup({
-    layout: pipeline.getBindGroupLayout(0),
+  const histogramBindGroup = device.createBindGroup({
+    layout: histogramChunkPipeline.getBindGroupLayout(0),
     entries: [
-      { binding: 0, resource: { buffer: histogramBuffer }},
+      { binding: 0, resource: { buffer: histogramChunksBuffer }},
       { binding: 1, resource: texture.createView() },
+    ],
+  });
+
+  const chunkSumBindGroup = device.createBindGroup({
+    layout: chunkSumPipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: histogramChunksBuffer }},
+      { binding: 1, resource: { buffer: histogramBuffer }},
     ],
   });
 
@@ -115,21 +182,32 @@ async function main() {
     label: 'histogram encoder',
   });
 
-  const pass = encoder.beginComputePass(timingHelper.addTimestampToPass({}));
-  pass.setPipeline(pipeline);
-  pass.setBindGroup(0, bindGroup);
-  pass.dispatchWorkgroups(texture.width, texture.height);
+  {
+  const pass = timingHelper.beginComputePass(encoder);
+  pass.setPipeline(histogramChunkPipeline);
+  pass.setBindGroup(0, histogramBindGroup);
+  pass.dispatchWorkgroups(chunksAcross, chunksDown);
   pass.end();
+  }
+
+  {
+  const pass = timingHelper2.beginComputePass(encoder);
+  pass.setPipeline(chunkSumPipeline);
+  pass.setBindGroup(0, chunkSumBindGroup);
+  pass.dispatchWorkgroups(1);
+  pass.end();
+  }
 
   encoder.copyBufferToBuffer(histogramBuffer, 0, resultBuffer, 0, resultBuffer.size);
-
-  timingHelper.resolveTiming(encoder);
 
   const commandBuffer = encoder.finish();
   device.queue.submit([commandBuffer]);
 
   timingHelper.getResult().then(duration => {
-    console.log('duration:', duration);
+    console.log('duration 1:', duration);
+  });
+  timingHelper2.getResult().then(duration => {
+    console.log('duration 2:', duration);
   });
 
   await resultBuffer.mapAsync(GPUMapMode.READ);

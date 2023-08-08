@@ -37,7 +37,7 @@ export default class TimingHelper {
     }
     return this.#querySets.pop();
   }
-  addTimestampToPass(descriptor = {}) {
+  #beginTimestampPass(encoder, fnName, descriptor) {
     if (this.#canTimestamp) {
       assert(this.#state === 'free', 'state not free');
       this.#state = 'need resolve';
@@ -45,16 +45,40 @@ export default class TimingHelper {
       assert(!this.#currentSet);
       this.#currentSet = this.#getQuerySet();
 
-      descriptor.timestampWrites = {
-        querySet: this.#currentSet.querySet,
-        beginningOfPassWriteIndex: 0,
-        endOfPassWriteIndex: 1,
-      };
+      const pass = encoder[fnName]({
+        ...descriptor,
+        ...{
+          timestampWrites: {
+            querySet: this.#currentSet.querySet,
+            beginningOfPassWriteIndex: 0,
+            endOfPassWriteIndex: 1,
+          },
+        },
+      });
+
+      const resolve = () => this.#resolveTiming(encoder);
+      pass.end = (function(origFn) {
+        return function() {
+          origFn.call(this);
+          resolve();
+        };
+      })(pass.end);
+
+      return pass;
+    } else {
+      return encoder[fnName](descriptor);
     }
-    return descriptor;
   }
 
-  resolveTiming(encoder) {
+  beginRenderPass(encoder, descriptor = {}) {
+    return this.#beginTimestampPass(encoder, 'beginRenderPass', descriptor);
+  }
+
+  beginComputePass(encoder, descriptor = {}) {
+    return this.#beginTimestampPass(encoder, 'beginComputePass', descriptor);
+  }
+
+  #resolveTiming(encoder) {
     if (!this.#canTimestamp) {
       return;
     }

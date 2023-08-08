@@ -256,19 +256,20 @@ async function main() {
     label: 'histogram encoder',
   });
   {
-    const pass = encoder.beginComputePass(timingHelper.addTimestampToPass({}));
+    const pass = timingHelper.beginComputePass(encoder);
     pass.setPipeline(pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.dispatchWorkgroups(1);
-
-    pass.setPipeline(rangePipeline);
-    pass.setBindGroup(0, rangeBindGroup);
-    pass.dispatchWorkgroups(1);
-
     pass.end();
   }
 
-  timingHelper.resolveTiming(encoder);
+  {
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(rangePipeline);
+    pass.setBindGroup(0, rangeBindGroup);
+    pass.dispatchWorkgroups(1);
+    pass.end();
+  }
 
   {
     const pass = encoder.beginRenderPass(renderPassDescriptor);

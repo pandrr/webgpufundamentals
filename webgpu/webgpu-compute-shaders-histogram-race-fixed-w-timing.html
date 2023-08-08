@@ -115,15 +115,13 @@ async function main() {
     label: 'histogram encoder',
   });
 
-  const pass = encoder.beginComputePass(timingHelper.addTimestampToPass({}));
+  const pass = timingHelper.beginComputePass(encoder);
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, bindGroup);
   pass.dispatchWorkgroups(texture.width, texture.height);
   pass.end();
 
   encoder.copyBufferToBuffer(histogramBuffer, 0, resultBuffer, 0, resultBuffer.size);
-
-  timingHelper.resolveTiming(encoder);
 
   const commandBuffer = encoder.finish();
   device.queue.submit([commandBuffer]);
