@@ -49,7 +49,7 @@ async function main() {
   const module = device.createShaderModule({
     label: 'histogram shader',
     code: `
-      @group(0) @binding(0) var<storage, read_write> histogram: array<array<atomic<u32>, 4>>;
+      @group(0) @binding(0) var<workgroup, read_write> histogram: array<array<atomic<u32>, 4>>;
       @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
       const kSRGBLuminanceFactors = vec3f(0.2126, 0.7152, 0.0722);
@@ -57,7 +57,7 @@ async function main() {
         return saturate(dot(color, kSRGBLuminanceFactors));
       }
 
-      @compute @workgroup_size(1, 1, 1) fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
+      @compute @workgroup_size(64, 64, 1) fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
         let position = global_invocation_id.xy;
         let numBins = f32(arrayLength(&histogram));
         let lastBinIndex = u32(numBins - 1);
