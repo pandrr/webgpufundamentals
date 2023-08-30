@@ -30,7 +30,7 @@ That's not so interesting but if we take a picture like this
 
 <div class="center">
   <div>
-    <div><img src="../resources/images/pexels-francesco-ungaro-96938.jpg" style="max-width: 700px;"></div>
+    <div><img src="../resources/images/pexels-francesco-ungaro-96938-mid.jpg" style="max-width: 700px;"></div>
     <div style="text-align: center;"><a href="https://www.pexels.com/photo/cute-kitten-hiding-behind-a-pillow-96938/">Photo by Francesco Ungaro</a></div>
   </div>
 </div>
@@ -461,7 +461,7 @@ We'll use the `createTextureFromSource` function we wrote in
 ```js
   const img = new Image();
   img.crossOrigin = '*';
-  img.src = 'resources/images/pexels-francesco-ungaro-96938.jpg'; /* webgpufundamentals: url */
+  img.src = 'resources/images/pexels-francesco-ungaro-96938-mid.jpg'; /* webgpufundamentals: url */
   await img.decode();
 
   // Add it to the document so we can see it
