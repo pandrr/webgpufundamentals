@@ -771,7 +771,7 @@ fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
 }
 ```
 
-With that our compute shader that uses 1 workgroup invocation per pixel, works!
+With that our compute shader, that uses 1 workgroup invocation per pixel, works!
 
 {{{example url="../webgpu-compute-shaders-histogram-race-fixed.html"}}}
 
