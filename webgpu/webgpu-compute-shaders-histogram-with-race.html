@@ -42,11 +42,10 @@ async function main() {
         let position = global_invocation_id.xy;
         let numBins = f32(arrayLength(&histogram));
         let lastBinIndex = u32(numBins - 1);
-        let color = textureLoad(ourTexture, position, 0);
-        let luminance = srgbLuminance(color.rgb);
+        var channels = textureLoad(ourTexture, position, 0);
+        channels.w = srgbLuminance(color.rgb);
         for (var ch = 0; ch < 4; ch++) {
-          let v = select(color[ch], luminance, ch == 3);
-          let bin = min(u32(v * numBins), lastBinIndex);
+          let bin = min(u32(channels[ch] * numBins), lastBinIndex);
           histogram[bin][ch] += 1;
         }
       }

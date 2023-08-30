@@ -113,9 +113,6 @@ function drawHistogram(histogram, channels, height = 100) {
   const max = [0, 0, 0, 0];
   const total = [0, 0, 0, 0];
   histogram.forEach((v, i) => {
-    if (i < 4) {
-      return;
-    }
     const ch = i % 4;
     max[ch] = Math.max(max[ch], v);
     total[ch] += v;
@@ -333,12 +330,11 @@ Here's the corresponding WGSL
   for (var y = 0u; y < size.y; y++) {
     for (var x = 0u; x < size.x; x++) {
       let position = vec2u(x, y);
-      let color = textureLoad(ourTexture, position, 0);
-      let luminance = srgbLuminance(color.rgb);
+      var channels = textureLoad(ourTexture, position, 0);
+      channels.w = srgbLuminance(channels.rgb);
       for (var ch = 0; ch < 4; ch++) {
-        let v = select(color[ch], luminance, ch == 3);
-        let ndx = min(u32(v * numBins), lastBinIndex);
-        histogram[ndx][ch] += 1;
+        let bin = min(u32(channels[ch] * numBins), lastBinIndex);
+        histogram[bin][ch] += 1;
       }
     }
   }
@@ -364,42 +360,35 @@ JavaScript.
     for (var x = 0u; x < size.x; x++) {
 ```
 
-We call `textureLoad` to get a color from the texture.
+We call `textureLoad` to get the channels from the texture.
 
 ```wgsl
       let position = vec2u(x, y);
-      let color = textureLoad(ourTexture, position, 0);
+      var channels = textureLoad(ourTexture, position, 0);
 ```
 
 `textureLoad` returns a single texel from a single mip level of a texture.
 It takes a texture, an unsigned integer texel coordinate, and a mip level
 (the `0`).
 
-For each channel we get a channel value or a luminance value.
+We compute a luminance value and store it as the 4th channel
 
 ```wgsl
-      let color = textureLoad(ourTexture, position, 0);
-      let luminance = srgbLuminance(color.rgb);
-      for (var ch = 0; ch < 4; ch++) {
-        let v = select(color[ch], luminance, ch == 3);
+      let position = vec2u(x, y);
+      var channels = textureLoad(ourTexture, position, 0);
++      channels.w = srgbLuminance(channels.rgb);
 ```
 
-The `select` function selects between 2 values based on a condition. It could be implemented as
+For each channel we get a channel value or a luminance value,
+convert it to a bin index and increment the bin.
 
 ```wgsl
-fn select(falseValue: f32, trueValue: f32, condition: bool) -> f32 {
-  return condition ? trueValue : falseValue;
-}
-```
-
-Finally we convert that value into a bin index and increment the bin.
-
-```wgsl
-      for (var ch = 0; ch < 4; ch++) {
-        let v = select(color[ch], luminance, ch == 3);
-+        let bin = min(u32(v * numBins), lastBinIndex);
+      var channels = textureLoad(ourTexture, position, 0);
+      channels.w = srgbLuminance(channels.rgb);
++      for (var ch = 0; ch < 4; ch++) {
++        let bin = min(u32(channels[ch] * numBins), lastBinIndex);
 +        histogram[bin][ch] += 1;
-      }
++      }
 ```
 
 Now the we have a compute shader, let's use it
@@ -439,11 +428,10 @@ then we create our shader
         for (var y = 0u; y < size.y; y++) {
           for (var x = 0u; x < size.x; x++) {
             let position = vec2u(x, y);
-            let color = textureLoad(ourTexture, position, 0);
-            let luminance = srgbLuminance(color.rgb);
+            var channels = textureLoad(ourTexture, position, 0);
+            channels.w = srgbLuminance(channels.rgb);
             for (var ch = 0; ch < 4; ch++) {
-              let v = select(color[ch], luminance, ch == 3);
-              let bin = min(u32(v * numBins), lastBinIndex);
+              let bin = min(u32(channels[ch] * numBins), lastBinIndex);
               histogram[bin][ch] += 1;
             }
           }
@@ -619,26 +607,25 @@ fn srgbLuminance(color: vec3f) -> f32 {
 -  for (var y = 0u; y < size.y; y++) {
 -    for (var x = 0u; x < size.x; x++) {
 -      let position = vec2u(x, y);
-      let color = textureLoad(ourTexture, position, 0);
-      let luminance = srgbLuminance(color.rgb);
-      for (var i = 0; i < 4; i++) {
-        let v = select(color[i], luminance, i == 3);
-        let ndx = min(u32(v * numBins), lastBinIndex);
-        histogram[ndx][i] += 1;
-      }
+  var channels = textureLoad(ourTexture, position, 0);
+  channels.w = srgbLuminance(color.rgb);
+  for (var ch = 0; ch < 4; ch++) {
+    let bin = min(u32(channels[ch] * numBins), lastBinIndex);
+    histogram[bin][ch] += 1;
+  }
 -    }
 -  }
 }
 ```
 
 As you can see, we got rid of the loop, instead we use the
-`@builtin(global_invocation_id)` value to make each invocation
-responsible for a single pixels. Theoretically this would mean
+`@builtin(global_invocation_id)` value to make each workgroup
+responsible for a single pixel. Theoretically this would mean
 all of the pixels could be processed in parallel.
 Our image is 4896 x 3010 which is almost 15 million pixels so
-there is lots of chance for parallelization.
+there are lots of chances for parallelization.
 
-The only other change needed is to actually run one invocation
+The only other change needed is to actually run one workgroup
 per pixel.
 
 ```js
@@ -693,20 +680,20 @@ This is a classic *race condition* like we mentioned in [the previous article](.
 This line in our shader
 
 ```wgsl
-        histogram[bin][i] += 1;
+        histogram[bin][ch] += 1;
 ```
 
 Actually translates to this
 
 ```wgsl
-   let value = histogram[bin][i];
-   histogram[bin][i] = value + 1;
+   let value = histogram[bin][ch];
+   histogram[bin][ch] = value + 1;
 ```
 
 What happens when 2 or more invocations are running in parallel
-and happen to have the same `bin` and `i`.
+and happen to have the same `bin` and `ch`.
 
-Imagine 2 invocations, where in both `bin = 1` and `i = 2` and
+Imagine 2 invocations, where in both `bin = 1` and `ch = 2` and
 `histogram[1][2] = 3`. If they run in parallel both invocations will load
 3 and both invocations will write 4, when the correct answer would be
 5.
@@ -724,12 +711,12 @@ Imagine 2 invocations, where in both `bin = 1` and `i = 2` and
     </thead>
     <tbody>
       <tr>
-        <td>value = histogram[bin][i]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="step">// loads 3</span></td>
-        <td>value = histogram[bin][i]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="step">// loads 3</span></td>
+        <td>value = histogram[bin][ch]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="step">// loads 3</span></td>
+        <td>value = histogram[bin][ch]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="step">// loads 3</span></td>
       </tr>
       <tr>
-        <td>histogram[bin][i] = value + 1 <span class="step">// stores 4</span></td>
-        <td>histogram[bin][i] = value + 1 <span class="step">// stores 4</span></td>
+        <td>histogram[bin][ch] = value + 1 <span class="step">// stores 4</span></td>
+        <td>histogram[bin][ch] = value + 1 <span class="step">// stores 4</span></td>
       </tr>
     </tbody>
   </table>
@@ -744,8 +731,8 @@ In other words, what's really happening in the code is this
 
 ```wgsl
    let value = histogram[bin];    // get the entire vec4 bin
-   value[i] = value[i] + 1;       // update value locally
-   histogram[bin] = value;        // put back the entire bin
+   value[ch] = value[ch] + 1;     // update a single channel of value locally
+   histogram[bin] = value;        // put back the entire bin, all 4 channels worth.
 ```
 
 WGSL has special instructions to solve this issue. This case we
@@ -790,13 +777,23 @@ With that our compute shader that uses 1 workgroup invocation per pixel, works!
 
 ## Workgroups
 
-Can we go even faster?
+Can we go faster? As mentioned in [the previous article](../webgpu-compute-shaders.html),
+the "workgroup" is the smallest unit of work a GPU can do. You define the size of a workgroup
+in 3 dimensions, and then you call `dispatchWorkgroups` to run a bunch of these workgroups.
+
+Workgroups can share internal storage and coordinate that storage with in the workgroup
+itself. How could we take advantage of that fact?
+
+Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations). We'll have
+each invocation work on at 256x1 section of the image. This will make it
 
 
 
 # Drawing a histogram
 
-* JavaScript: 166ms ???
-* Compute Shader: 1 workgroup 1x1x1 : 443ms
-* Compute Shader: width x height workgroups: 1x1x1 : 5.5ms
+# M1
 
+* JavaScript: 166ms ???
+* Compute Shader: 1 workgroup 1x1x1 : 5988ms
+* Compute Shader: 1 workgroup per pixel : 34ms
+* 

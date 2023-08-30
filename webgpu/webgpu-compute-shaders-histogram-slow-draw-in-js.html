@@ -46,11 +46,10 @@ async function main() {
         for (var y = 0u; y < size.y; y++) {
           for (var x = 0u; x < size.x; x++) {
             let position = vec2u(x, y);
-            let color = textureLoad(ourTexture, position, 0);
-            let luminance = srgbLuminance(color.rgb);
+            var channels = textureLoad(ourTexture, position, 0);
+            channels.w = srgbLuminance(channels.rgb);
             for (var ch = 0; ch < 4; ch++) {
-              let v = select(color[ch], luminance, ch == 3);
-              let bin = min(u32(v * numBins), lastBinIndex);
+              let bin = min(u32(channels[ch] * numBins), lastBinIndex);
               histogram[bin][ch] += 1;
             }
           }
