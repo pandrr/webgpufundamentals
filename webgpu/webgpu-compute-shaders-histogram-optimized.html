@@ -29,6 +29,10 @@ async function main() {
     requiredFeatures: [
       ...(canTimestamp ? ['timestamp-query'] : []),
     ],
+    requiredLimits: {
+      maxBufferSize: 1024 * 1024 * 1024,
+      maxStorageBufferBindingSize: 1024 * 1024 * 1024,
+    },
   });
   if (!device) {
     fail('need a browser that supports WebGPU');
@@ -129,17 +133,17 @@ async function main() {
     },
   });
 
-  function makeImage() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 1024;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#f00';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    return canvas;
-  }
+  const img = new Image();
+  img.crossOrigin = '*';
+  img.src = 'resources/images/pexels-francesco-ungaro-96938.jpg'; /* webgpufundamentals: url */
+  await img.decode();
 
-  const texture = createTextureFromSource(device, makeImage());
+  // Add it to the document so we can see it
+  document.body.appendChild(img);
+
+  // Upload the image into a texture.
+  const imgBitmap = await createImageBitmap(img, { colorSpaceConversion: 'none' });
+  const texture = createTextureFromSource(device, imgBitmap);
 
   const histogramBuffer = device.createBuffer({
     size: 256 * 4 * 4, // 256 entries * 4 (rgba) * 4 bytes per (u32)
