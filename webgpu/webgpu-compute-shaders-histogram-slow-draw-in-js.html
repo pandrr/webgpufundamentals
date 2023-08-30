@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>WebGPU Compute Shaders - Histogram, race, draw with JavaScript</title>
+    <title>WebGPU Compute Shaders - Histogram, slow, draw with JavaScript</title>
     <style>
       @import url(resources/webgpu-lesson.css);
       img {
@@ -32,22 +32,28 @@ async function main() {
       @group(0) @binding(0) var<storage, read_write> histogram: array<vec4u>;
       @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
+      // from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
       const kSRGBLuminanceFactors = vec3f(0.2126, 0.7152, 0.0722);
       fn srgbLuminance(color: vec3f) -> f32 {
         return saturate(dot(color, kSRGBLuminanceFactors));
       }
 
       @compute @workgroup_size(1, 1, 1)
-      fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
-        let position = global_invocation_id.xy;
+      fn cs() {
+        let size = textureDimensions(ourTexture, 0);
         let numBins = f32(arrayLength(&histogram));
         let lastBinIndex = u32(numBins - 1);
-        let color = textureLoad(ourTexture, position, 0);
-        let luminance = srgbLuminance(color.rgb);
-        for (var ch = 0; ch < 4; ch++) {
-          let v = select(color[ch], luminance, ch == 3);
-          let bin = min(u32(v * numBins), lastBinIndex);
-          histogram[bin][ch] += 1;
+        for (var y = 0u; y < size.y; y++) {
+          for (var x = 0u; x < size.x; x++) {
+            let position = vec2u(x, y);
+            let color = textureLoad(ourTexture, position, 0);
+            let luminance = srgbLuminance(color.rgb);
+            for (var ch = 0; ch < 4; ch++) {
+              let v = select(color[ch], luminance, ch == 3);
+              let bin = min(u32(v * numBins), lastBinIndex);
+              histogram[bin][ch] += 1;
+            }
+          }
         }
       }
     `,
@@ -95,10 +101,10 @@ async function main() {
   });
 
   const encoder = device.createCommandEncoder({ label: 'histogram encoder' });
-  const pass = encoder.beginComputePass();
+  const pass = encoder.beginComputePass(encoder);
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, bindGroup);
-  pass.dispatchWorkgroups(texture.width, texture.height);
+  pass.dispatchWorkgroups(1);
   pass.end();
 
   encoder.copyBufferToBuffer(histogramBuffer, 0, resultBuffer, 0, resultBuffer.size);

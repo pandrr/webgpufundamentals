@@ -63,10 +63,10 @@ async function main() {
         let lastBinIndex = u32(numBins - 1);
         let color = textureLoad(ourTexture, position, 0);
         let luminance = srgbLuminance(color.rgb);
-        for (var i = 0; i < 4; i++) {
-          let v = select(color[i], luminance, i == 3);
+        for (var ch = 0; ch < 4; ch++) {
+          let v = select(color[ch], luminance, ch == 3);
           let ndx = min(u32(v * numBins), lastBinIndex);
-          atomicAdd(&histogram[ndx][i], 1u);
+          atomicAdd(&histogram[ndx][ch], 1u);
         }
       }
     `,

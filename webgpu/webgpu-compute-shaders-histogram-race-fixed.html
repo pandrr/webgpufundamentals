@@ -1,24 +1,23 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>WebGPU Compute Shaders - Histogram</title>
+    <title>WebGPU Compute Shaders - Histogram, race fixed, draw with JavaScript</title>
     <style>
       @import url(resources/webgpu-lesson.css);
-html, body {
-  margin: 0;       /* remove the default margin          */
-  height: 100%;    /* make the html,body fill the page   */
-}
-canvas {
-  display: block;  /* make the canvas act like a block   */
-  width: 100%;     /* make the canvas fill its container */
-  height: 100%;
-}
+      img {
+        max-width: 256px;
+      }
+      canvas {
+        display: block;
+        border: 1px solid #888;
+      }
     </style>
   </head>
   <body>
-    <canvas></canvas>
   </body>
   <script type="module">
+import {createTextureFromSource} from '../3rdparty/webgpu-utils.module.js';
+
 async function main() {
   const adapter = await navigator.gpu?.requestAdapter();
   const device = await adapter?.requestDevice();
@@ -26,15 +25,6 @@ async function main() {
     fail('need a browser that supports WebGPU');
     return;
   }
-
-  // Get a WebGPU context from the canvas and configure it
-  const canvas = document.querySelector('canvas');
-  const context = canvas.getContext('webgpu');
-  const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({
-    device,
-    format: presentationFormat,
-      });
 
   const module = device.createShaderModule({
     label: 'histogram shader',
@@ -47,16 +37,17 @@ async function main() {
         return saturate(dot(color, kSRGBLuminanceFactors));
       }
 
-      @compute @workgroup_size(1, 1, 1) fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
+      @compute @workgroup_size(1, 1, 1)
+      fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
         let position = global_invocation_id.xy;
         let numBins = f32(arrayLength(&histogram));
         let lastBinIndex = u32(numBins - 1);
         let color = textureLoad(ourTexture, position, 0);
         let luminance = srgbLuminance(color.rgb);
-        for (var i = 0; i < 4; i++) {
-          let v = select(color[i], luminance, i == 3);
+        for (var ch = 0; ch < 4; ch++) {
+          let v = select(color[ch], luminance, ch == 3);
           let ndx = min(u32(v * numBins), lastBinIndex);
-          atomicAdd(&histogram[ndx][i], 1u);
+          atomicAdd(&histogram[ndx][ch], 1u);
         }
       }
     `,
@@ -71,39 +62,21 @@ async function main() {
     },
   });
 
+  const img = new Image();
+  img.crossOrigin = '*';
+  img.src = 'resources/images/pexels-francesco-ungaro-96938.jpg'; /* webgpufundamentals: url */
+  await img.decode();
 
-  const kTextureWidth = 5;
-  const kTextureHeight = 7;
-  const _ = [255,   0,   0, 255];  // red
-  const y = [255, 255,   0, 255];  // yellow
-  const b = [  0,   0, 255, 255];  // blue
-  const textureData = new Uint8Array([
-    b, _, _, _, _,
-    _, y, y, y, _,
-    _, y, _, _, _,
-    _, y, y, _, _,
-    _, y, _, _, _,
-    _, y, _, _, _,
-    _, _, _, _, _,
-  ].flat());
+  // Add it to the document so we can see it
+  document.body.appendChild(img);
 
-  const texture = device.createTexture({
-    label: 'yellow F on red',
-    size: [kTextureWidth, kTextureHeight],
-    format: 'rgba8unorm',
-    usage:
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST,
-  });
-  device.queue.writeTexture(
-      { texture },
-      textureData,
-      { bytesPerRow: kTextureWidth * 4 },
-      { width: kTextureWidth, height: kTextureHeight },
-  );
+  // Upload the image into a texture.
+  const imgBitmap = await createImageBitmap(img, { colorSpaceConversion: 'none' });
+  const texture = createTextureFromSource(device, imgBitmap);
 
+  const numBins = 256;
   const histogramBuffer = device.createBuffer({
-    size: 256 * 4 * 4, // 256 entries * 4 (rgba) * 4 bytes per (u32)
+    size: numBins * 4 * 4, // 256 entries * 4 (rgba) * 4 bytes per (u32)
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
   });
 
@@ -113,6 +86,7 @@ async function main() {
   });
 
   const bindGroup = device.createBindGroup({
+    label: 'histogram bindGroup',
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: { buffer: histogramBuffer }},
@@ -120,9 +94,7 @@ async function main() {
     ],
   });
 
-  const encoder = device.createCommandEncoder({
-    label: 'histogram encoder',
-  });
+  const encoder = device.createCommandEncoder({ label: 'histogram encoder' });
   const pass = encoder.beginComputePass();
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, bindGroup);
@@ -135,21 +107,54 @@ async function main() {
   device.queue.submit([commandBuffer]);
 
   await resultBuffer.mapAsync(GPUMapMode.READ);
-  const result = new Uint32Array(resultBuffer.getMappedRange());
+  const histogram = new Uint32Array(resultBuffer.getMappedRange());
 
-  const to3 = v => v.toString().padStart(3);
+  // draw the red, green, and blue channels
+  drawHistogram(histogram, [0, 1, 2]);
 
-  const sum = [0, 0, 0, 0];
-  for (let i = 0; i < 256; ++i) {
-    const off = i * 4;
-    console.log(to3(i), to3(result[off]), to3(result[off + 1]), to3(result[off + 2]), to3(result[off + 3]));
-    for (let j = 0; j < 4; ++j) {
-      sum[j] += result[off + j];
-    }
-  }
-  console.log('sum:', sum);
+  // draw the luminosity channel
+  drawHistogram(histogram, [3]);
+
+  resultBuffer.unmap();
 }
 
+function drawHistogram(histogram, channels, height = 100) {
+  // find the highest value for each channel
+  const max = [0, 0, 0, 0];
+  const total = [0, 0, 0, 0];
+  histogram.forEach((v, i) => {
+    const ch = i % 4;
+    max[ch] = Math.max(max[ch], v);
+    total[ch] += v;
+  });
+  console.log('total:', total);
+
+  const numBins = histogram.length / 4;
+  const canvas = document.createElement('canvas');
+  canvas.width = numBins;
+  canvas.height = height;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+
+  const colors = [
+    'rgb(255, 0, 0)',
+    'rgb(0, 255, 0)',
+    'rgb(0, 0, 255)',
+    'rgb(255, 255, 255)',
+  ];
+
+  ctx.globalCompositeOperation = 'screen';
+
+  for (let x = 0; x < numBins; ++x) {
+    const offset = x * 4;
+    for (const ch of channels) {
+      const scale = 0.2 * numBins / total[ch];
+      const v = histogram[offset + ch] * scale * height;
+      ctx.fillStyle = colors[ch];
+      ctx.fillRect(x, height - v, 1, v);
+    }
+  }
+}
 
 function fail(msg) {
   // eslint-disable-next-line no-alert

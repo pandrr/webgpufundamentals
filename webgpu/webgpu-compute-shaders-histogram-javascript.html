@@ -5,7 +5,7 @@
     <style>
       @import url(resources/webgpu-lesson.css);
       img {
-        max-width: 400px;
+        max-width: 256px;
       }
       canvas {
         display: block;
@@ -18,61 +18,74 @@
   <script type="module">
 async function main() {
   const img = new Image();
-  img.src = 'resources/images/pexels-francesco-ungaro-96938-sm.jpg';
+  img.crossOrigin = '*';
+  img.src = 'resources/images/pexels-francesco-ungaro-96938.jpg'; /* webgpufundamentals: url */
   await img.decode();
 
+  // Add it to the document so we can see it
   document.body.appendChild(img);
 
-  const rgb = (r, g, b) => `rgb(${r * 255}, ${g * 255}, ${b * 255})`;
+  const imgData = getImageData(img);
+//  const rgb = (r, g, b) => `rgb(${r * 255}, ${g * 255}, ${b * 255})`;
+//  const imgData = (function() {
+//    const canvas = document.createElement('canvas');
+//    canvas.width = 256;
+//    canvas.height = 256;
+//    document.body.appendChild(canvas);
+//    const ctx = canvas.getContext('2d');
+//    ctx.fillStyle = '#000';
+//    ctx.fillRect(0, 0, 256, 256);
+//    for (let i = 0; i < 256; ++i) {
+//      ctx.fillStyle = rgb(0, i / 255, 0);
+//      ctx.fillRect(i, 0, 1, i);
+//    }
+//    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+//  })();
+const start = performance.now();
+  const numBins = 256;
+  const histogram = computeHistogram(numBins, imgData);
+const elapsed = performance.now() - start;
+console.log(Math.floor(elapsed * 1000 * 1000));
 
-  //const imgData = getImageData(img);
-  const imgData = (function() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    document.body.appendChild(canvas);
-    const ctx = canvas.getContext('2d');
-    for (let i = 0; i < 256; ++i) {
-      ctx.fillStyle = rgb(0, i / 255, 0);
-      ctx.fillRect(i, 0, 1, i);
-    }
-    return ctx.getImageData(0, 0, canvas.width, canvas.height);
-  })();
+  // draw the red, green, and blue channels
+  drawHistogram(histogram, [0, 1, 2]);
 
-
-  const histogram = computeHistogram(256, imgData);
-  console.log(histogram);
-  drawHistogram(histogram);
+  // draw the luminosity channel
+  drawHistogram(histogram, [3]);
 }
 
-function computeHistogram(numBuckets, imgData) {
+function computeHistogram(numBins, imgData) {
   const {width, height, data} = imgData;
-  const histogram = new Array(numBuckets * 4).fill(0);
+  const histogram = new Array(numBins * 4).fill(0);
   for (let y = 0; y < height; ++y) {
     for (let x = 0; x < width; ++x) {
       const offset = (y * width + x) * 4;
       for (let ch = 0; ch < 4; ++ch) {
-        if (ch !== 1) {
-          continue;
-        }
         const v = ch < 3
            ? data[offset + ch] / 255
            : luminance(data, offset);
-        const bucket = Math.min(numBuckets - 1, v * numBuckets) | 0;
-        if (y === 0) {
-          console.log(x, offset, bucket, v);
-        }
-        ++histogram[bucket * 4 + ch];
+        const bin = Math.min(numBins - 1, v * numBins) | 0;
+        ++histogram[bin * 4 + ch];
       }
     }
   }
   return histogram;
 }
 
-function drawHistogram(histogram, height = 100) {
-  const numBuckets = histogram.length / 4;
+function drawHistogram(histogram, channels, height = 100) {
+  // find the highest value for each channel
+  const max = [0, 0, 0, 0];
+  const total = [0, 0, 0, 0];
+  histogram.forEach((v, i) => {
+    const ch = i % 4;
+    max[ch] = Math.max(max[ch], v);
+    total[ch] += v;
+  });
+  console.log('total:', total);
+
+  const numBins = histogram.length / 4;
   const canvas = document.createElement('canvas');
-  canvas.width = numBuckets;
+  canvas.width = numBins;
   canvas.height = height;
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
@@ -81,33 +94,16 @@ function drawHistogram(histogram, height = 100) {
     'rgb(255, 0, 0)',
     'rgb(0, 255, 0)',
     'rgb(0, 0, 255)',
-    'rgb(128, 128, 128)',
+    'rgb(255, 255, 255)',
   ];
-
-histogram[1] = 0;
 
   ctx.globalCompositeOperation = 'screen';
 
-  // find the highest value for each channel
-  const max = [0, 0, 0, 0];
-  const total = [0, 0, 0, 0];
-  histogram.forEach((v, i) => {
-    if (i < 4) {
-      return;
-    }
-    const ch = i % 4;
-    max[ch] = Math.max(max[ch], v);
-    total[ch] += v;
-  });
-  console.log('total:', total);
-
-  for (let x = 0; x < numBuckets; ++x) {
+  for (let x = 0; x < numBins; ++x) {
     const offset = x * 4;
-    for (let ch = 0; ch < 4; ++ch) {
-      if (ch !== 1) {
-        continue;
-      }
-      const v = histogram[offset + ch] / max[ch] * height;// / (total[ch] - histogram[ch]);
+    for (const ch of channels) {
+      const scale = 0.2 * numBins / total[ch];
+      const v = histogram[offset + ch] * scale * height;
       ctx.fillStyle = colors[ch];
       ctx.fillRect(x, height - v, 1, v);
     }
@@ -126,9 +122,10 @@ function luminance(data, offset) {
   return l;
 }
 
-/*
 function getImageData(img) {
   const canvas = document.createElement('canvas');
+
+  // make the canvas the same size as the image
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
 
@@ -136,7 +133,6 @@ function getImageData(img) {
   ctx.drawImage(img, 0, 0);
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
-*/
 
 main();
   </script>

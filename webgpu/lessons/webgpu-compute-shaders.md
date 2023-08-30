@@ -306,7 +306,7 @@ run 64 things in lockstep. If you choose a higher number and the GPU can't do it
 as a fast path it will chose a slower path. If on the other hand you chose a number
 below what the GPU can do then you may not get the maximum performance.
 
-## Races in Compute Shaders
+## <a href="a-race-conditions"></a>Races in Compute Shaders
 
 A common mistake in WebGPU is not handling race conditions. A race
 condition is where multiple threads are running at the same time and
