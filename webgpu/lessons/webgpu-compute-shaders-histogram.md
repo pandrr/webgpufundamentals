@@ -19,12 +19,12 @@ For example, this 5x7 image
 
 <div class="center">
   <div>
-    <div><img src="resources/5x7-f.png" style="max-width: 100%; width: 200px; height: 280px; image-rendering: pixelated; image-rendering: crisp-edges;"></div>
-    <div style="text-align: center;">5x7 F</div>
+    <div data-diagram="image" style="display: inline-block; width: 100px;"></div>
+    <div style="text-align: center;">5x7</div>
   </div>
 </div>
 
-Has 1 blue pixel, 8 yellow pixels, and 27 red pixels.
+Has 14 blue pixels, 5 yellow pixels, and 16 red pixels.
 
 That's not so interesting but if we take a picture like this
 
@@ -234,6 +234,8 @@ async function main() {
   const imgData = getImageData(img);
   const numBins = 256;
   const histogram = computeHistogram(numBins, imgData);
+
+  showImageBitmap(imgBitmap);
 
   // draw the red, green, and blue channels
   drawHistogram(histogram, [0, 1, 2]);
@@ -552,6 +554,8 @@ to draw the histogram
   await resultBuffer.mapAsync(GPUMapMode.READ);
   const histogram = new Uint32Array(resultBuffer.getMappedRange());
 
+  showImageBitmap(imgBitmap);
+
   // draw the red, green, and blue channels
   drawHistogram(histogram, [0, 1, 2]);
 
@@ -787,6 +791,21 @@ itself. How could we take advantage of that fact?
 Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations). We'll have
 each invocation work on at 256x1 section of the image. This will make it
 
+single
+<div class="webgpu_center"><div data-diagram="single" style="display: inline-block; width: 600px;"></div></div>
+
+race
+<div class="webgpu_center"><div data-diagram="race" style="display: inline-block; width: 600px;"></div></div>
+
+norace
+
+<div class="webgpu_center"><div data-diagram="noRace" style="display: inline-block; width: 600px;"></div></div>
+
+chunks
+<div class="webgpu_center"><div data-diagram="chunks" style="display: inline-block; width: 600px;"></div></div>
+
+reduce
+<div class="webgpu_center"><div data-diagram="reduce" style="display: inline-block; width: 600px;"></div></div>
 
 
 # Drawing a histogram
@@ -797,3 +816,12 @@ each invocation work on at 256x1 section of the image. This will make it
 * Compute Shader: 1 workgroup 1x1x1 : 5988ms
 * Compute Shader: 1 workgroup per pixel : 34ms
 * 
+
+
+* Cleanup drawHistogram (we don't need totals or max?)
+* Write Timing Article and add Timing?
+* Fix totals
+
+<!-- keep this at the bottom of the article -->
+<link rel="stylesheet" href="webgpu-compute-shaders-histogram.css">
+<script type="module" src="webgpu-compute-shaders-histogram.js"></script>
