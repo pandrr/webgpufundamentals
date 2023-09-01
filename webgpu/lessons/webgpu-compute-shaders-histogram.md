@@ -19,12 +19,14 @@ For example, this 5x7 image
 
 <div class="center">
   <div>
-    <div data-diagram="image" style="display: inline-block; width: 100px;"></div>
+    <div data-diagram="image" style="display: inline-block; height: 280px;"></div>
     <div style="text-align: center;">5x7</div>
   </div>
 </div>
 
 Has 14 blue pixels, 5 yellow pixels, and 16 red pixels.
+
+<!--
 
 That's not so interesting but if we take a picture like this
 
@@ -788,11 +790,13 @@ in 3 dimensions, and then you call `dispatchWorkgroups` to run a bunch of these 
 Workgroups can share internal storage and coordinate that storage with in the workgroup
 itself. How could we take advantage of that fact?
 
+-->
+
 Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations). We'll have
 each invocation work on at 256x1 section of the image. This will make it
 
 single
-<div class="webgpu_center"><div data-diagram="single" style="display: inline-block; width: 600px;"></div></div>
+<div class="webgpu_center"><div data-diagram="single" style="display: inline-block; width: 300px; height: 330px;"></div></div>
 
 race
 <div class="webgpu_center"><div data-diagram="race" style="display: inline-block; width: 600px;"></div></div>

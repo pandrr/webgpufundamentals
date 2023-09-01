@@ -17,26 +17,121 @@ const image = [
   '🟥🟨🟨🟨🟥',
   '🟥🟦🟦🟦🟥',
   '🟦🟥🟥🟥🟦',
-];
-const unicodeColors = {
-  '🟥': 'red',
-  '🟨': 'yellow',
-  '🟦': 'blue',
-  '🟩': 'green',
-  '🟫': 'brown',
-  '🟧': 'orange',
-  '🟪': 'purple',
-  '⬜️': 'white',
+].map(s => s.match(/../g));
+const unicodeColorsToCSS = {
   '⬛️': 'black',
+  '🟥': 'red',
+  '🟧': 'orange',
+  '🟨': 'yellow',
+  '🟩': 'green',
+  '🟦': 'blue',
+  '🟪': 'purple',
+  '🟫': 'brown',
+  '⬜️': 'white',
 };
 
+const setTranslation = (e, x, y) => e.attr({transform: `translate(${x}, ${y})`});
+
 function drawImage(draw, image, size) {
-  image.forEach((line, y) => {
-    const pixels = line.match(/../g);
+  const group = draw.group();
+  image.forEach((pixels, y) => {
     pixels.forEach((pixel, x) => {
-      draw.rect(size, size).move(x * size, y * size).fill(unicodeColors[pixel]);
+      group.rect(size, size).move(x * size, y * size).fill(unicodeColorsToCSS[pixel]);
     });
   });
+  return {
+    group,
+  };
+}
+
+const makeText = (parent, t) => {
+  return parent.text(t)
+    .font({
+      family: 'monospace',
+      weight: 'bold',
+      size: '10',
+    })
+    .css({
+      filter: `
+        drop-shadow( 1px  0px 0px #fff) 
+        drop-shadow( 0px  1px 0px #fff) 
+        drop-shadow(-1px  0px 0px #fff) 
+        drop-shadow( 0px -1px 0px #fff) 
+      `,
+    });
+};
+
+function drawBin(draw, color, size) {
+  // [X]
+  const group = draw.group();
+  group.rect(size, size).fill(color).stroke('black');
+  const text = makeText(group, '0').font({anchor: 'middle'});
+  text.attr({cx: 0, cy: 0, 'dominant-baseline': 'central'});
+  setTranslation(text, size / 2, size / 2);
+  return {
+    group,
+    text,
+  };
+}
+
+// [0]
+// [0]
+// [0]
+const kBins = '🟥🟨🟦'.match(/../g);
+function drawChunk(draw, size) {
+  const group = draw.group();
+  const bins = kBins.map((color, binNdx) => {
+    const bin = drawBin(group, unicodeColorsToCSS[color], size);
+    bin.group.move(0, binNdx * size);
+    return bin;
+  });
+  return {
+    group,
+    bins,
+  };
+}
+
+// [-][-][-]
+function drawInvocation(draw, size) {
+  const group = draw.group();
+  group.rect(size, size).fill('#444').stroke('#000');
+  const color = group.rect(size, size / 2).fill('#888');
+  const text = makeText(group, '0').font({anchor: 'middle', size: '8'});
+  setTranslation(text, size / 2, size * 0.9);
+  return {
+    group,
+    color,
+    text,
+  };
+}
+
+const kWaveSize = 3;
+function drawWorkgroup(draw, size) {
+  const group = draw.group();
+  const invocations = [];
+  for (let i = 0; i < kWaveSize; ++i) {
+    const invocation = drawInvocation(group, size);
+    invocation.group.move(i * size, 0);
+    invocations.push(invocation);
+  }
+  return {
+    group,
+    invocations,
+  };
+}
+
+function drawLabel(draw, text) {
+  return draw.text(text)
+    .font({
+      family: 'monospace',
+      weight: 'bold',
+      size: '10',
+      anchor: 'middle',
+    })
+    .attr({
+      class: 'svg-main-text-color-fill',
+      'dominant-baseline': 'central',
+    });
 }
 
 renderDiagrams({
@@ -52,12 +147,18 @@ renderDiagrams({
     const uiDiv = el('div');
     const div = el('div', {}, [diagramDiv, uiDiv]);
     elem.appendChild(div);
-    const totalWidth = 100;
-    const totalHeight = 140;
+    const width = image[0].length;
+    const height = image.length;
+    const size = 20;
+    const totalWidth = width * size;
+    const totalHeight = height * size;
     const draw = svg().addTo(diagramDiv).viewbox(0, 0, totalWidth, totalHeight);
-    drawImage(draw, image, 20);
+    drawImage(draw, image, size);
   },
   /*
+   [ | | ] [ | | ]
+   [ | | ] [ | | ]
+
    +-----+
    |.....|          []
    |.....|          []
@@ -69,8 +170,29 @@ renderDiagrams({
     const uiDiv = el('div');
     const div = el('div', {}, [diagramDiv, uiDiv]);
     elem.appendChild(div);
+    const width = image[0].length;
+    const height = image.length;
+    const size = 20;
+    const imageWidth = width * size;
+    const imageHeight = height * size;
+    const draw = svg().addTo(diagramDiv).viewbox(0, 0, imageWidth + size * 3, imageHeight + size * 3.5);
+
+    const img = drawImage(draw, image, size);
+    img.group.move(0, size * 3.5);
+
+    const chunk = drawChunk(draw, size);
+    setTranslation(chunk.group, imageWidth + size * 1.5, size * 5.5);
+    setTranslation(drawLabel(draw, 'bins'), imageWidth + size * 2, size * 5);
+
+    setTranslation(drawLabel(draw, 'workgroup'), size * 2.5, size * 0.5);
+    const workGroup = drawWorkgroup(draw, size);
+    workGroup.group.move(size, size);
+    //createRequestAnimationFrameLoop(elem, update);
   },
   /*
+   [ | | ] [ | | ]
+   [ | | ] [ | | ]
+
    +-----+
    |.....|          []
    |.....|          []
@@ -84,6 +206,9 @@ renderDiagrams({
     elem.appendChild(div);
   },
   /*
+   [ | | ] [ | | ]
+   [ | | ] [ | | ]
+
    +-----+
    |.....|          []
    |.....|          []
@@ -97,11 +222,17 @@ renderDiagrams({
     elem.appendChild(div);
   },
   /*
+   [ | | ] [ | | ]
+   [ | | ] [ | | ]
+
    +-----+
    |.....|          []
    |.....|          []
    |.....|          []
    +-----+
+
+   [ | | ] [ | | ]
+   [ | | ] [ | | ]
 
    [][][][][][][][][][]
    [][][][][][][][][][]
