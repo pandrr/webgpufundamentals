@@ -796,7 +796,9 @@ Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations). We'll
 each invocation work on at 256x1 section of the image. This will make it
 
 single
-<div class="webgpu_center"><div data-diagram="single" style="display: inline-block; width: 300px; height: 330px;"></div></div>
+<div class="webgpu_center">
+  <div data-diagram="single" style="display: inline-block; width: 500px;"></div>
+</div>
 
 race
 <div class="webgpu_center"><div data-diagram="race" style="display: inline-block; width: 600px;"></div></div>
