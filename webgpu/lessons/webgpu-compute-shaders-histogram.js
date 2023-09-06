@@ -8,6 +8,7 @@ import { SVG as svg } from '/3rdparty/svg.esm.js';
 import {
   createElem as el, radio, checkbox, makeTable,
 } from './resources/elem.js';
+import { clamp01, lerp } from './resources/utils.js';
 
 const image = [
   '🟦🟥🟥🟥🟥🟦',
@@ -306,38 +307,87 @@ renderDiagrams({
       workGroups.push(workGroup);
     }
 
+    const workForWorkgroups = [];
+
     const runners = [];
     workGroups.forEach(workgroup => {
-      workgroup.invocations.forEach(invocation => {
+      const workForCores = [];
+
+      workgroup.invocations.forEach((invocation, id) => {
         const toInvocation = getTransformToElement(draw.node, invocation.group.node);
         const p = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
 
         const ig = draw.group();
         const sx = p.x;
         const sy = p.y;
-      const id = runners.length;
-//      const x = id % 10;
-//      const y = id / 10 | 0;
-//        const ex = 40 + x * 5;
-//        const ey = 70 + y * size;
-        const ex = sx;
-        const ey = sy;
+        let ex = sx;
+        let ey = sy;
 
         const line = ig.line(sx, sy, ex, ey)
           .stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)')
           .marker('end', oMarker);
 
+        function* goto(targetX, targetY, duration = 1) {
+          const start = performance.now();
+          for (;;) {
+            const t = clamp01((performance.now() - start) / duration);
+            line.plot(sx, sy, lerp(ex, targetX, t), lerp(ey, targetY, t));
+            if (t === 1) {
+              break;
+            }
+            yield;
+          }
+          ex = targetX;
+          ey = targetY;
+        }
+
         const runner = new CoroutineRunner();
         runner.add(function* doit() {
           for (;;) {
-            line.plot(sx, sy, ex + Math.sin((id) + performance.now() * 0.001) * 20, ey);
-            yield;
+            while (workForCores.length === 0) {
+              yield;
+            }
+            const { global_invocation_id, local_invocation_id } = workForCores.shift();
+
+            const tx = global_invocation_id.x * kWaveSize + local_invocation_id.x;
+            const ty = global_invocation_id.y;
+
+            // read texture
+            for (;;) {
+              runner.add(goto(tx, ty));
+//              const color = unicodeColorsToCSS[image[ty][tx]];
+              runner.add(goto(sx, sy));
+            }
+            // wait for bin to be free
+            // lock bin
+            // get bin value
+            // store bin value
+            // unlock bin
+
+            // wait for others
+            // copy bin to chunk
           }
         }());
 
         invocation.runner = runner;
         runners.push(runner);
       });
+
+      const runner = new CoroutineRunner();
+      runners.push(runner);
+      runner.add(function* startInvocations() {
+        for (;;) {
+          while (workForWorkgroups.length === 0) {
+            yield;
+          }
+          const global_invocation_id = workForWorkgroups.shift();
+          for (let i = 0; i < kWaveSize; ++i) {
+            workForCores.push({global_invocation_id, local_invocation_id: {x: i}});
+          }
+        }
+      }());
+
+
     });
 
     // None of this code makes any sense. Don't look at it as an example
@@ -345,13 +395,12 @@ renderDiagrams({
     const runner = new CoroutineRunner();
     runners.push(runner);
     runner.add(function* dispatcher() {
-      const work = [];
-      const waves = [...workGroups];
+//      const waves = [...workGroups];
 
       function dispatchWorkgroups(width, depth) {
         for (let y = 0; y < depth; ++y) {
           for (let x = 0; x < width; ++x) {
-            work.push({x, y});
+            workForWorkgroups.push({x, y});
           }
         }
       }
@@ -359,7 +408,11 @@ renderDiagrams({
       // make list of workgroup to dispatch
       dispatchWorkgroups(width / kWaveSize, height);
 
-      while (work.length) {
+      for (;;) {
+        yield;
+      }
+      /*
+      while (workForWorkgroups.length) {
         // wait for a workgroup
         while (waves.length === 0) {
           yield;
@@ -367,9 +420,10 @@ renderDiagrams({
 
         const wave = waves.shift();
         const work = work.shift();
-        
+
         if ()
       }
+      */
 
     }());
 

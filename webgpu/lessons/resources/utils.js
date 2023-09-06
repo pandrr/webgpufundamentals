@@ -35,6 +35,7 @@ export function convertBytesToHex(byteArray) {
 export const euclideanModulo = (x, a) => x - a * Math.floor(x / a);
 export const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 export const clamp01 = v => Math.min(1, Math.max(0, v));
+export const lerp = (a, b, t) => a + (b - a) * t;
 
 /**
  * make css hsl string from normalized inputs
