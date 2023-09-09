@@ -19,6 +19,13 @@ const image = [
   '🟥🟦🟨🟨🟦🟥',
   '🟦🟥🟥🟥🟥🟦',
 ].map(s => s.match(/../g));
+
+const texelColorToBinNdx = {
+  '🟥': 0,
+  '🟦': 1,
+  '🟨': 2,
+};
+
 const unicodeColorsToCSS = {
   '⬛️': 'black',
   '🟥': 'red',
@@ -51,6 +58,39 @@ function* waitSeconds(duration) {
   }
 }
 
+/**
+ * To use
+ *
+ * ```
+ * function* do5(msg) {
+ *   for (let i = 0; i < 5; ++i) {
+ *     console.log(i, msg);
+ *     yield;
+ *   }
+ * }
+ * function* do5By5() {
+ *   for (let i = 0; i < 5; ++i) {
+ *     yield* do5();
+ *   }
+ * }
+ *
+ * const runner = new CoroutineRunner();
+ * runner.add(do5by5());
+ * setInterval(() => runner.update(), 1000);
+ * ```
+ *
+ * yielding a generator starts executing that generator until it finishes
+ * runner.add adds the next step to the current sequence. In other words
+ *
+ * ```
+ * runner.add(do5('foo'))
+ * runner.add(do5('bar'))
+ * ```
+ *
+ * Will print foo 5 times followed by bar 5 times
+ *
+ *
+ */
 class CoroutineRunner {
   constructor() {
     this.generatorStacks = [];
@@ -114,6 +154,11 @@ class CoroutineRunner {
 const getTransformToElement = (toElement, fromElement) =>
     toElement.getScreenCTM().inverse().multiply(fromElement.getScreenCTM());
 
+const getBinPosition = (draw, bin, size) => {
+  const toInvocation = getTransformToElement(draw.node, bin.group.node);
+  const p = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
+  return [p.x, p.y];
+}
 
 const updateColorScheme = () => {
   const isDarkMode = darkMatcher.matches;
@@ -159,13 +204,14 @@ const makeText = (parent, t) => {
 function createBin(draw, color, size) {
   // [X]
   const group = draw.group();
-  group.rect(size, size).fill(color).stroke('black');
+  const rect = group.rect(size, size).fill(color).stroke('black');
   const text = makeText(group, '0').font({anchor: 'middle'});
   text.attr({cx: 0, cy: 0, 'dominant-baseline': 'central'});
   text.transform({translateX: size / 2, translateY: size / 2});
   return {
     group,
     text,
+    rect,
   };
 }
 
@@ -310,8 +356,9 @@ renderDiagrams({
     const workForWorkgroups = [];
 
     const runners = [];
-    workGroups.forEach(workgroup => {
+    workGroups.forEach((workgroup, workgroupId) => {
       const workForCores = [];
+      let activeCount = 0;
 
       workgroup.invocations.forEach((invocation, id) => {
         const toInvocation = getTransformToElement(draw.node, invocation.group.node);
@@ -326,12 +373,20 @@ renderDiagrams({
         const line = ig.line(sx, sy, ex, ey)
           .stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)')
           .marker('end', oMarker);
+        const rect = ig.rect(10, 10).center(0, 0).fill('none');
+        const text = makeText(ig, '').font({anchor: 'middle'});
+        text.attr({cx: 0, cy: 0, 'dominant-baseline': 'central'});
+        text.transform({translate: p});
 
-        function* goto(targetX, targetY, duration = 1) {
-          const start = performance.now();
+          function* goto(targetX, targetY, duration = 1) {
+          const start = performance.now() * 0.001;
           for (;;) {
-            const t = clamp01((performance.now() - start) / duration);
-            line.plot(sx, sy, lerp(ex, targetX, t), lerp(ey, targetY, t));
+            const t = clamp01((performance.now() * 0.001 - start) / duration);
+            const x = lerp(ex, targetX, t);
+            const y = lerp(ey, targetY, t);
+            line.plot(sx, sy, x, y);
+            rect.transform({translate: [x, y]});
+            text.transform({translate: [x, y]});
             if (t === 1) {
               break;
             }
@@ -347,25 +402,74 @@ renderDiagrams({
             while (workForCores.length === 0) {
               yield;
             }
+            ++activeCount;
             const { global_invocation_id, local_invocation_id } = workForCores.shift();
+console.log(global_invocation_id, local_invocation_id);
 
             const tx = global_invocation_id.x * kWaveSize + local_invocation_id.x;
             const ty = global_invocation_id.y;
 
             // read texture
-            for (;;) {
-              runner.add(goto(tx, ty));
-//              const color = unicodeColorsToCSS[image[ty][tx]];
-              runner.add(goto(sx, sy));
-            }
+            rect.fill('none');
+            yield goto((tx + 0.5) * size, (ty + 5.5) * size);
+            const texel = image[ty][tx];
+            const color = unicodeColorsToCSS[texel];
+            rect.fill(color);
+            yield goto(sx, sy);
+            invocation.color.fill(color);
+            rect.fill('none');
+
+            const binNdx = texelColorToBinNdx[texel];
+            const workgroupBin = workgroup.chunk.bins[binNdx];
+            const binPosition = getBinPosition(draw, workgroupBin, size);
+
             // wait for bin to be free
             // lock bin
+            workgroupBin.rect.stroke('red');
+
             // get bin value
+            yield goto(...binPosition);
+            const value = 0;
+            text.text(value);
+            yield goto(sx, sy);
+
             // store bin value
+            text.text('');
+            invocation.text.text(value);
+            yield;
+            invocation.text.text(value + 1);
+            text.text(value + 1);
+            yield goto(...binPosition);
+            workgroupBin.text.text(value + 1);
+            text.text('');
+            yield goto(sx, sy);
+
             // unlock bin
+            workgroupBin.rect.stroke('black');
 
             // wait for others
             // copy bin to chunk
+            const srcBin = workgroup.chunk.bins[local_invocation_id.x];
+            const srcBinPosition = getBinPosition(draw, srcBin, size);
+            yield goto(...srcBinPosition);
+            const binTotal = 5;
+            text.text(binTotal);
+//            yield goto(sx, sy);
+//            invocation.text.text(binTotal);
+
+            const chunkAcross = (width / kWaveSize);
+            const chunkNdx = global_invocation_id.x + global_invocation_id.y * chunkAcross;
+            const chunk = chunks[chunkNdx];
+            const chunkBin = chunk.bins[local_invocation_id.x];
+            const chunkBinPosition = getBinPosition(draw, chunkBin, size);
+            yield goto(...chunkBinPosition);
+            chunkBin.text.text(binTotal);
+            text.text('');
+            yield goto(sx, sy);
+            invocation.color.fill('#888');
+            invocation.text.text('');
+
+            --activeCount;
           }
         }());
 
@@ -384,10 +488,11 @@ renderDiagrams({
           for (let i = 0; i < kWaveSize; ++i) {
             workForCores.push({global_invocation_id, local_invocation_id: {x: i}});
           }
+          while (activeCount > 0) {
+            yield;
+          }
         }
       }());
-
-
     });
 
     // None of this code makes any sense. Don't look at it as an example
@@ -407,6 +512,7 @@ renderDiagrams({
 
       // make list of workgroup to dispatch
       dispatchWorkgroups(width / kWaveSize, height);
+      console.log(workForWorkgroups.slice());
 
       for (;;) {
         yield;
@@ -427,10 +533,62 @@ renderDiagrams({
 
     }());
 
+    if (false) {
+      const sx = 10;
+      const sy = 10;
+      let ex = 50;
+      let ey = 60;
+
+      let logCount = 1000;
+      const log = (...args) => {
+        if (logCount > 0) {
+          --logCount;
+          console.log(...args);
+        }
+      };
+
+        const line = draw.line(sx, sy, ex, ey)
+          .stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)')
+          .marker('end', oMarker);
+
+        function* goto(targetX, targetY, duration = 1) {
+          log('goto-start');
+          const start = performance.now() * 0.001;
+          for (;;) {
+            const t = clamp01((performance.now() * 0.001 - start) / duration);
+            const x = lerp(ex, targetX, t);
+            const y = lerp(ey, targetY, t);
+            log('goto:', t, x, y);
+            line.plot(sx, sy, x, y);
+            if (t === 1) {
+              break;
+            }
+            yield;
+          }
+          ex = targetX;
+          ey = targetY;
+          log('goto-end');
+        }
+
+        const runner = new CoroutineRunner();
+        runner.add(function* doit() {
+          for (;;) {
+            log('start');
+            yield goto(100, 110);
+            log('middle');
+            yield goto(50, 60);
+            log('end');
+          }
+        }());
+        runners.push(runner);
+    }
+
 
     const update = () => {
+     // debugger;
       runners.forEach(runner => runner.update());
     };
+
 
     createRequestAnimationFrameLoop(elem, update);
   },
