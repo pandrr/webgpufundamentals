@@ -38,6 +38,12 @@ const unicodeColorsToCSS = {
   '⬜️': 'white',
 };
 
+const unicodeBinColorsToCSS = {
+  '🟥': '#800',
+  '🟨': '#880',
+  '🟦': '#008',
+};
+
 const setTranslation = (e, x, y) => e.attr({transform: `translate(${x}, ${y})`});
 
 const darkColors = {
@@ -158,7 +164,7 @@ const getBinPosition = (draw, bin, size) => {
   const toInvocation = getTransformToElement(draw.node, bin.group.node);
   const p = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
   return [p.x, p.y];
-}
+};
 
 const updateColorScheme = () => {
   const isDarkMode = darkMatcher.matches;
@@ -201,17 +207,25 @@ const makeText = (parent, t) => {
     });
 };
 
-function createBin(draw, color, size) {
+function createBin(draw, color, size, lockColor) {
   // [X]
   const group = draw.group();
   const rect = group.rect(size, size).fill(color).stroke('black');
   const text = makeText(group, '0').font({anchor: 'middle'});
   text.attr({cx: 0, cy: 0, 'dominant-baseline': 'central'});
   text.transform({translateX: size / 2, translateY: size / 2});
+  const lock = group.rect(size - 4, size - 4).move(2, 2).fill('none').stroke(lockColor).attr({'stroke-width': 4}).hide();
+  const lockText = group.text('0').font({
+    family: 'monospace',
+    weight: 'bold',
+    size: '8',
+  }).move(0, -2).fill('rgba(0, 0, 0, 0.5)').hide();
   return {
     group,
     text,
     rect,
+    lock,
+    lockText,
   };
 }
 
@@ -219,10 +233,10 @@ function createBin(draw, color, size) {
 // [0]
 // [0]
 const kBins = '🟥🟨🟦'.match(/../g);
-function createChunk(draw, size) {
+function createChunk(draw, size, lockColor) {
   const group = draw.group();
   const bins = kBins.map((color, binNdx) => {
-    const bin = createBin(group, unicodeColorsToCSS[color], size);
+    const bin = createBin(group, unicodeBinColorsToCSS[color], size, lockColor);
     bin.group.transform({translateY: binNdx * size});
     return bin;
   });
@@ -235,11 +249,16 @@ function createChunk(draw, size) {
 // [-]
 // [-]
 // [-]
-function createInvocation(draw, size) {
+function createInvocation(draw, size, id) {
   const group = draw.group();
   group.rect(size, size).fill('#444').stroke('#000');
   const color = group.rect(size, size / 2).fill('#888');
   const text = makeText(group, '0').font({anchor: 'middle', size: '8'});
+  group.text(id).font({
+    family: 'monospace',
+    weight: 'bold',
+    size: '8',
+  }).move(0, -2).fill('rgba(0, 0, 0, 0.5)');
   setTranslation(text, size / 2, size * 0.9);
   return {
     group,
@@ -249,15 +268,16 @@ function createInvocation(draw, size) {
 }
 
 const kWaveSize = 3;
-function createWorkgroup(draw, size) {
+function createWorkgroup(draw, size, lockColor) {
   const group = draw.group();
+  group.rect(size * 3, size * 3.5).move(size * -0.25, size * -0.25).fill('rgba(255, 255, 255, 0.125)');
   const invocations = [];
   for (let i = 0; i < kWaveSize; ++i) {
-    const invocation = createInvocation(group, size);
+    const invocation = createInvocation(group, size, i);
     invocation.group.transform({translateX: 0, translateY: i * size});
     invocations.push(invocation);
   }
-  const chunk = createChunk(group, size);
+  const chunk = createChunk(group, size, lockColor);
   chunk.group.transform({translateX: size * 1.5});
   return {
     group,
@@ -321,26 +341,32 @@ renderDiagrams({
     const size = 20;
     const imageWidth = width * size;
     const imageHeight = height * size;
-    const draw = svg().addTo(diagramDiv).viewbox(0, 0, imageWidth + size * 9, imageHeight + size * 6.0);
+    const draw = svg().addTo(diagramDiv).viewbox(0, 0, imageWidth + size * 9, imageHeight + size * 6.5);
 
     const oMarker = draw.marker(size + 2, size + 2, function(add) {
       add.circle(size).fill('none').stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)').attr({orient: 'auto'});
     });
 
-    setTranslation(createLabel(draw, 'texture'), imageWidth / 2, imageHeight + size * 5.5);
+    const lockGradient = draw.gradient('linear', function(add) {
+      add.stop(0, '#ff0');
+      add.stop(0.3, '#fd0');
+      add.stop(1, '#640');
+    }).from(0, 0).to(0.5, 1);
+
+    setTranslation(createLabel(draw, 'texture'), imageWidth / 2, imageHeight + size * 6);
 
     const img = createImage(draw, image, size);
-    img.group.transform({translateY: size * 5});
+    img.group.transform({translateY: size * 5.5});
 
-    setTranslation(createLabel(draw, 'bins'), imageWidth + size * 5, size * (5.5 + height));
+    setTranslation(createLabel(draw, 'bins'), imageWidth + size * 5, size * (6 + height));
 
     const numChunks = 14;
     const chunks = [];
     for (let i = 0; i < numChunks; ++i) {
       const x = i % (numChunks / 2);
       const y = i / (numChunks / 2) | 0;
-      const chunk = createChunk(draw, size);
-      chunk.group.transform({translateX: imageWidth + size * 1.5 + x * size, translateY: size * 5.5 + size * 3.5 * y});
+      const chunk = createChunk(draw, size, lockGradient);
+      chunk.group.transform({translateX: imageWidth + size * 1.5 + x * size, translateY: size * 5.75 + size * 3.5 * y});
       chunks.push(chunk);
     }
 
@@ -348,8 +374,8 @@ renderDiagrams({
     const numWorkgroups = 4;
     const workGroups = [];
     for (let i = 0; i < numWorkgroups; ++i) {
-      const workGroup = createWorkgroup(draw, size);
-      workGroup.group.transform({translateX: size * 1 + size * (kWaveSize + .5) * i, translateY: size});
+      const workGroup = createWorkgroup(draw, size, lockGradient);
+      workGroup.group.transform({translateX: size * 1 + size * (kWaveSize + .5) * i, translateY: size * 1.5});
       workGroups.push(workGroup);
     }
 
@@ -359,8 +385,19 @@ renderDiagrams({
     workGroups.forEach((workgroup, workgroupId) => {
       const workForCores = [];
       let activeCount = 0;
+      const workgroupBinLocked = new Array(workgroup.invocations.length).fill(false);
+      let workgroupBarrierCount = 0;
 
-      workgroup.invocations.forEach((invocation, id) => {
+      function* workgroupBarrier() {
+        ++workgroupBarrierCount;
+        while (workgroupBarrierCount !== workgroup.invocations.length) {
+          yield;
+        }
+        yield;  // need to wait for all invocations to exit loop
+        --workgroupBarrierCount;
+      }
+
+      workgroup.invocations.map((invocation, id) => {
         const toInvocation = getTransformToElement(draw.node, invocation.group.node);
         const p = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
 
@@ -370,6 +407,10 @@ renderDiagrams({
         let ex = sx;
         let ey = sy;
 
+        let markerCircle;
+        const oMarker = draw.marker(size + 2, size + 2, function(add) {
+          markerCircle = add.circle(size).fill('none').stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)').attr({orient: 'auto'});
+        });
         const line = ig.line(sx, sy, ex, ey)
           .stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)')
           .marker('end', oMarker);
@@ -378,7 +419,7 @@ renderDiagrams({
         text.attr({cx: 0, cy: 0, 'dominant-baseline': 'central'});
         text.transform({translate: p});
 
-          function* goto(targetX, targetY, duration = 1) {
+        function* goto(targetX, targetY, duration = 1) {
           const start = performance.now() * 0.001;
           for (;;) {
             const t = clamp01((performance.now() * 0.001 - start) / duration);
@@ -420,12 +461,20 @@ console.log(global_invocation_id, local_invocation_id);
             rect.fill('none');
 
             const binNdx = texelColorToBinNdx[texel];
-            const workgroupBin = workgroup.chunk.bins[binNdx];
-            const binPosition = getBinPosition(draw, workgroupBin, size);
 
             // wait for bin to be free
+            while (workgroupBinLocked[binNdx]) {
+              markerCircle.stroke(`rgba(255, 255, 0, ${performance.now() % 1 * 0.5})`);
+              yield;
+            }
+            markerCircle.stroke('rgba(255, 255, 255, 0.25)');
+
             // lock bin
-            workgroupBin.rect.stroke('red');
+            workgroupBinLocked[binNdx] = true;
+            const workgroupBin = workgroup.chunk.bins[binNdx];
+            const binPosition = getBinPosition(draw, workgroupBin, size);
+            workgroupBin.lock.show();
+            workgroupBin.lockText.text(local_invocation_id.x).show();
 
             // get bin value
             yield goto(...binPosition);
@@ -445,9 +494,15 @@ console.log(global_invocation_id, local_invocation_id);
             yield goto(sx, sy);
 
             // unlock bin
-            workgroupBin.rect.stroke('black');
+            workgroupBinLocked[binNdx] = false;
+            workgroupBin.lock.hide();
+            workgroupBin.lockText.hide();
 
             // wait for others
+            markerCircle.stroke('rgba(0, 0, 0, 0.25)');
+            yield workgroupBarrier();
+            markerCircle.stroke('rgba(255, 255, 255, 0.25)');
+
             // copy bin to chunk
             const srcBin = workgroup.chunk.bins[local_invocation_id.x];
             const srcBinPosition = getBinPosition(draw, srcBin, size);
@@ -488,6 +543,7 @@ console.log(global_invocation_id, local_invocation_id);
           for (let i = 0; i < kWaveSize; ++i) {
             workForCores.push({global_invocation_id, local_invocation_id: {x: i}});
           }
+          yield;
           while (activeCount > 0) {
             yield;
           }
