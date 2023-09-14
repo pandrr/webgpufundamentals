@@ -486,13 +486,15 @@ function makeComputeDiagram(diagramDiv, uiDiv) {
       });
       const line = ig.line(sx, sy, ex, ey)
         .stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)')
-        .marker('end', oMarker);
+        .marker('end', oMarker)
+        .hide();
       const rect = ig.rect(10, 10).center(0, 0).fill('none').stroke('#000').hide();
       const text = makeText(ig, '').font({anchor: 'middle'});
       text.attr({cx: 0, cy: 0, 'dominant-baseline': 'central'});
       text.transform({translate: p});
 
       function* goto(targetX, targetY, duration = 1) {
+        line.show();
         yield lerpStep(t => {
           const x = lerp(ex, targetX, t);
           const y = lerp(ey, targetY, t);
@@ -503,6 +505,19 @@ function makeComputeDiagram(diagramDiv, uiDiv) {
         yield waitSeconds(0.25);
         ex = targetX;
         ey = targetY;
+      }
+
+      function* fadeLine() {
+        ex = sx;
+        ey = sy;
+        yield lerpStep(t => {
+          const color = rgba(255, 255, 255, (1 - t) * 0.25);
+          line.stroke(color);
+          markerCircle.stroke(color);
+        }, 0.5);
+        line.hide();
+        line.stroke(rgba(255, 255, 255, 0.25));
+        markerCircle.stroke(rgba(255, 255, 255, 0.25));
       }
 
       function* scaleAndFade(group) {
@@ -590,7 +605,8 @@ function makeComputeDiagram(diagramDiv, uiDiv) {
           workgroupStorage[binNdx] = value + 1;
           workgroupBin.text.text(value + 1);
           text.text('');
-          yield goto(sx, sy);
+          //yield goto(sx, sy, 0);
+          yield fadeLine();
 
           // unlock bin
           workgroupBinLocked[binNdx] = false;
@@ -614,8 +630,8 @@ function makeComputeDiagram(diagramDiv, uiDiv) {
           yield goto(...srcBinPosition);
           const binTotal = workgroupStorage[local_invocation_id.x];
           text.text(binTotal);
-//            yield goto(sx, sy);
-//            invocation.text.text(binTotal);
+          yield goto(sx, sy);
+          invocation.text.text(binTotal);
 
           const chunkAcross = (width / kWaveSize);
           const chunkNdx = global_invocation_id.x + global_invocation_id.y * chunkAcross;
@@ -625,7 +641,8 @@ function makeComputeDiagram(diagramDiv, uiDiv) {
           yield goto(...chunkBinPosition);
           chunkBin.text.text(binTotal);
           text.text('');
-          yield goto(sx, sy);
+          //yield goto(sx, sy, 0);
+          yield fadeLine();
           invocation.color.fill('#888');
           invocation.text.text('');
           yield invocation.setInstructions('-');
