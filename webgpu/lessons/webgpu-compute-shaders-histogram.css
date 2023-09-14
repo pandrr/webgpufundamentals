@@ -1,0 +1,16 @@
+.ui {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;  
+}
+.ui select,
+.ui button {
+  min-width: 3em;
+  min-height: 2em;
+  margin-right: 0.25em;
+}
+.ui button img {
+  width: 2em;
+  height: 2em;
+  display: block;
+}

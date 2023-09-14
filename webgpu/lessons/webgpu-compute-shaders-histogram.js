@@ -6,9 +6,9 @@ import {
 } from './resources/good-raf.js';
 import { SVG as svg } from '/3rdparty/svg.esm.js';
 import {
-  createElem as el, radio, checkbox, makeTable,
+  createElem as el, select, radio, checkbox, makeTable,
 } from './resources/elem.js';
-import { clamp01, hsl, lerp } from './resources/utils.js';
+import { clamp01, hsl, lerp, rgba } from './resources/utils.js';
 
 const image = [
   '🟦🟥🟥🟥🟥🟦',
@@ -101,15 +101,17 @@ class CoroutineRunner {
   isBusy() {
     return this.addQueue.length + this.generatorStacks.length > 0;
   }
-  add(generator, delay = 0) {
+  add(generator) {
     const genStack = [generator];
-    if (delay) {
-      genStack.push(waitSeconds(delay));
-    }
     this.addQueue.push(genStack);
   }
   remove(generator) {
     this.removeQueue.add(generator);
+  }
+  reset() {
+    this.generatorStacks.length = 0;
+    this.addQueue.length = 0;
+    this.removeQueue.clear();
   }
   update() {
     this._addQueued();
@@ -152,23 +154,6 @@ class CoroutineRunner {
   }
 }
 
-const speed = 1;
-
-function* lerpStep(fn, duration = 1) {
-  const start = performance.now() * 0.001 * speed;
-  for (let t = 0; t < 1;) {
-    t = clamp01((performance.now() * 0.001 * speed - start) / duration);
-    fn(t, t === 1);
-    if (t < 1) {
-      yield;
-    }
-  }
-}
-
-function* waitSeconds(duration) {
-  yield lerpStep(_ => _, duration);
-}
-
 const getTransformToElement = (toElement, fromElement) =>
     toElement.getScreenCTM().inverse().multiply(fromElement.getScreenCTM());
 
@@ -189,8 +174,69 @@ const updateColorScheme = () => {
 };
 updateColorScheme();
 
-function makeComputeDiagram(diagramDiv) {
+function makeComputeDiagram(diagramDiv, uiDiv) {
+  let elapsedTime = 0;
+  let deltaTime = 0;
+  let speed = 1;
+  let stepCount = 0;
+  let targetStepCount = -1;
+  let playing = true;
+
+  const speeds = [0.25, 0.5, 1, 2];
+
+  const resetSteps = [];
   const runners = [];
+
+  const reset = () => {
+    stepCount = 0;
+    elapsedTime = 0;
+    deltaTime = 0;
+    runners.forEach(runner => runner.reset());
+    resetSteps.forEach(fn => fn());
+  };
+  const stepBack = () => {
+    const targetStepCount = stepCount - 1;
+    reset();
+  };
+  const stepForward = () => {
+    const targetStepCount = stepCount + 1;
+  };
+  const playPause = function() {
+    playing = !playing;
+    const play = this.querySelector('[data-id=play]');
+    const pause = this.querySelector('[data-id=pause]');
+    play.style.display = playing ? 'none' : '';
+    pause.style.display = playing ? '' : 'none';
+  };
+
+  uiDiv.appendChild(el('div', { className: 'ui'}, [
+    el('button', {type: 'button', onClick: reset }, [el('img', {src: '/webgpu/lessons/resources/rewind.svg'})]),
+    el('button', {type: 'button', onClick: stepBack }, [el('img', {src: '/webgpu/lessons/resources/stepbackward.svg'})]),
+    el('button', {type: 'button', onClick: stepForward }, [el('img', {src: '/webgpu/lessons/resources/stepforward.svg'})]),
+    el('button', {type: 'button', onClick: playPause }, [
+      el('img', { dataset: {id: 'pause'}, src: '/webgpu/lessons/resources/pause.svg'}),
+      el('img', { style: { display: 'none' }, dataset: {id: 'play'}, src: '/webgpu/lessons/resources/play.svg'}),
+    ]),
+    select('', ['¼x', '½x', '1x', '2x'], 2, function(ndx) {
+      speed = speeds[ndx];
+    }),
+  ]));
+
+  function* lerpStep(fn, duration = 1) {
+    let time = 0;
+    for (let t = 0; t < 1;) {
+      time += deltaTime * speed * (playing ? 1 : 0);
+      t = targetStepCount >= 0 ? 1 : clamp01(time / duration);
+      fn(t, t === 1);
+      if (t < 1) {
+        yield;
+      }
+    }
+  }
+
+  function* waitSeconds(duration) {
+    yield lerpStep(_ => _, duration);
+  }
 
   function createImage(draw, image, size) {
     const group = draw.group();
@@ -307,17 +353,29 @@ function makeComputeDiagram(diagramDiv) {
         .fill(hsl(1 / 12 + id * 0.1, 0.7, lerp(0.4, 0.8, id / 2)))
         .stroke({width: 0.5})
         .hide();
-
+    const lockStop = group.image('/webgpu/lessons/resources/stop.svg').size(size, size).move(0, size * 0.5).hide();
+    const barrier = group.image('/webgpu/lessons/resources/barrier.svg').size(size, size).move(0, size * 0.5).hide();
+    const plus = group.group();
+    plus.rect(size / 4, size / 2).center(size / 2, size);
+    plus.rect(size / 2, size / 4).center(size / 2, size);
+    plus.hide();
     return {
       group,
       color,
       text,
       lock,
+      lockStop,
+      barrier,
+      plus,
       setInstructions: text => setInstructions(instructionsGroup, instructions, text),
     };
   }
 
+  const size = 20;
   const kWaveSize = 3;
+  const kInvocationHeight = 1.75;
+  const kWorkgroupHeight = kInvocationHeight * kWaveSize * size;
+
   function createWorkgroup(draw, size, lockColor) {
     const group = draw.group();
     group.rect(size * 3, size * 5.5).move(size * -0.25, size * -0.25).fill('rgba(255, 255, 255, 0.125)');
@@ -352,7 +410,6 @@ function makeComputeDiagram(diagramDiv) {
 
   const width = image[0].length;
   const height = image.length;
-  const size = 20;
   const imageWidth = width * size;
   const imageHeight = height * size;
   const draw = svg().addTo(diagramDiv).viewbox(0, 0, imageWidth + size * 9, imageHeight + size * 8.5);
@@ -368,7 +425,7 @@ function makeComputeDiagram(diagramDiv) {
   }).from(0, 0).to(0.5, 1);
 
   const img = createImage(draw, image, size);
-  const imgY = size * 7.5;
+  const imgY = kWorkgroupHeight + size * 2;
   img.group.transform({translateY: imgY});
 
   setTranslation(createLabel(draw, 'texture'), imageWidth / 2, imageHeight + imgY + size * 0.5);
@@ -448,6 +505,14 @@ function makeComputeDiagram(diagramDiv) {
         ey = targetY;
       }
 
+      function* scaleAndFade(group) {
+        group.show();
+        yield lerpStep(t => {
+          group.fill(rgba(255, 255, 255, 1 - t)).transform({scale: 1 + t});
+        });
+        group.hide();
+      }
+
       const runner = new CoroutineRunner();
       runner.add(function* doit() {
         for (;;) {
@@ -477,11 +542,13 @@ function makeComputeDiagram(diagramDiv) {
 
           // wait for bin to be free
           yield invocation.setInstructions('atmc+');
+          invocation.lockStop.show();
           while (workgroupBinLocked[binNdx]) {
-            markerCircle.stroke(`rgba(255, 255, 0, ${performance.now() % 1 * 0.5})`);
+//            markerCircle.stroke({width: 5, color: 'red'});//rgba(255, 255, 0, ${elapsedTime * 10 % 1 * 0.5})`);
             yield;
           }
-          markerCircle.stroke('rgba(255, 255, 255, 0.25)');
+          invocation.lockStop.hide();
+//          markerCircle.stroke('rgba(255, 255, 255, 0.25)');
 
           // lock bin
           workgroupBinLocked[binNdx] = true;
@@ -514,7 +581,10 @@ function makeComputeDiagram(diagramDiv) {
           text.text('');
           invocation.text.text(value);
           yield;
+          // inc
           invocation.text.text(value + 1);
+          text.text('');
+          yield scaleAndFade(invocation.plus);
           text.text(value + 1);
           yield goto(...binPosition);
           workgroupStorage[binNdx] = value + 1;
@@ -530,10 +600,12 @@ function makeComputeDiagram(diagramDiv) {
 
           // wait for others
           invocation.color.fill('#888');
+          invocation.barrier.show();
           yield invocation.setInstructions('wkbarrier');
-          markerCircle.stroke('rgba(0, 0, 0, 0.25)');
+//          markerCircle.stroke('rgba(0, 0, 0, 0.25)');
           yield workgroupBarrier();
-          markerCircle.stroke('rgba(255, 255, 255, 0.25)');
+//          markerCircle.stroke('rgba(255, 255, 255, 0.25)');
+          invocation.barrier.hide();
 
           // copy bin to chunk
           yield invocation.setInstructions('bin=');
@@ -622,7 +694,13 @@ function makeComputeDiagram(diagramDiv) {
 
   }());
 
-  const update = () => {
+  let then = 0;
+  const update = (now) => {
+    now *= 0.001;
+    deltaTime = Math.min(0.1, now - then);
+    elapsedTime += deltaTime;
+    then = now;
+
    // debugger;
     runners.forEach(runner => runner.update());
   };
@@ -666,7 +744,7 @@ renderDiagrams({
     const uiDiv = el('div');
     const div = el('div', {}, [diagramDiv, uiDiv]);
     elem.appendChild(div);
-    makeComputeDiagram(diagramDiv);
+    makeComputeDiagram(diagramDiv, uiDiv);
   },
   /*
    [ | | ] [ | | ]
