@@ -16,6 +16,7 @@
   align-items: stretch;
 }
 .ui button img {
+  filter: none;
   width: 1.5em;
   height: 1.5em;
   display: block;
