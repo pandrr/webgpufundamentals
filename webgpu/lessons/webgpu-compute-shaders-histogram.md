@@ -797,21 +797,21 @@ each invocation work on at 256x1 section of the image. This will make it
 
 single
 <div class="webgpu_center">
-  <div data-diagram="single" style="display: inline-block; max-width: 100%; width: 500px;"></div>
+  <div data-diagram="single" style="display: inline-block; max-width: 100%; width: 700px;"></div>
 </div>
 
 race
-<div class="webgpu_center"><div data-diagram="race" style="display: inline-block; width: 600px;"></div></div>
+<div class="webgpu_center"><div data-diagram="race" style="display: inline-block; width: 700px;"></div></div>
 
 norace
 
-<div class="webgpu_center"><div data-diagram="noRace" style="display: inline-block; max-width: 100%; width: 600px;"></div></div>
+<div class="webgpu_center"><div data-diagram="noRace" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
 
 chunks
-<div class="webgpu_center"><div data-diagram="chunks" style="display: inline-block; max-width: 100%; width: 600px;"></div></div>
+<div class="webgpu_center"><div data-diagram="chunks" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
 
 reduce
-<div class="webgpu_center"><div data-diagram="reduce" style="display: inline-block; max-width: 100%; width: 600px;"></div></div>
+<div class="webgpu_center"><div data-diagram="reduce" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
 
 
 # Drawing a histogram
