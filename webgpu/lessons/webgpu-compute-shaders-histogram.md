@@ -15,18 +15,22 @@ Hopefully this article will provide a good example of making
 a compute shader.
 
 An image histogram is where you sum up all the pixels in an image by their values.
-For example, this 5x7 image
+For example, this 6x7 image
 
 <div class="center">
   <div>
-    <div data-diagram="image" style="display: inline-block; height: 280px;"></div>
-    <div style="text-align: center;">5x7</div>
+    <div data-diagram="image" style="display: inline-block; width: 240px; max-width: 100%;"></div>
+    <div style="text-align: center;">6x7</div>
   </div>
 </div>
 
-Has 14 blue pixels, 5 yellow pixels, and 16 red pixels.
+Has 16 red pixels, 8 yellow pixels, and 18 blue pixels.
 
-<!--
+<div class="center">
+  <div>
+    <div data-diagram="imageHistogram" style="display: inline-block; width: 40px; max-width: 100%;"></div>
+  </div>
+</div>
 
 That's not so interesting but if we take a picture like this
 
@@ -50,7 +54,7 @@ and we count up the pixel values and graph them, we get something like this
   </div>
 </div>
 
-One the left we have 3 graphs, overlaying each other, showing the
+On the left we have 3 graphs overlaying each other. They show the
 counts for the various red, green, and blue values of the pixels.
 We can see there is lots of red and green but not nearly as much
 blue except in the low-light areas.
@@ -249,7 +253,7 @@ async function main() {
 
 And here's the image histogram.
 
-{{{example url="../webgpu-compute-shaders-histogram-javascript.html"}}}
+<!-- {{{example url="../webgpu-compute-shaders-histogram-javascript.html"}}} -->
 
 Hopefully it was easy to follow what the JavaScript code is doing.
 Let's convert it to WebGPU!
@@ -347,13 +351,13 @@ Here's the corresponding WGSL
 
 Above, not much changed. In JavaScript we get the data, width, and height
 from `imgData`. In WGSL we get the width and height from the texture by
-passing it to the `textureSize` function.
+passing it to the `textureDimensions` function.
 
 ```wgsl
   let size = textureDimensions(ourTexture, 0);
 ```
 
-`textureSize` takes a texture and a mip level (the `0` above) and returns the
+`textureDimensions` takes a texture and a mip level (the `0` above) and returns the
 size of the mip level for that texture.
 
 We loop through all of the pixels of the texture, just like we did in
@@ -569,12 +573,24 @@ to draw the histogram
 
 And it should work
 
-{{{example url="../webgpu-compute-shaders-histogram-slow-draw-in-js.html"}}}
+<!-- {{{example url="../webgpu-compute-shaders-histogram-slow-draw-in-js.html"}}} -->
 
-The biggest problem with this example is we used just 1 workgroup with
-a workgroup size if `(1, 1, 1)`. Effectively this means a single core on the GPU
-was all that was used. While this might be faster than JavaScript we can do
-much better
+Timing the results I found **this is about 6x slower than the JavaScript version!!!** 😱
+
+What's up with that? We designed our solution above with a single loop and used
+a single workgroup invocation with a size of 1. That means just a single core of
+the GPU was used to compute the histogram. GPU cores are generally, not as fast
+as CPU cores. GPUs get their speed from massive parallelization but given our
+design above we got none.
+
+Here's a diagram of what's happening using are small example image.
+
+<div class="webgpu_center">
+  <div data-diagram="single" style="display: inline-block; max-width: 100%; width: 700px;"></div>
+</div>
+
+Given a single GPU invocation is slower than a CPU we need to find a way to
+parallelize our approach.
 
 ## Optimize - More Invocations
 
@@ -646,7 +662,7 @@ per pixel.
 
 Here it is running
 
-{{{example url="../webgpu-compute-shaders-histogram-with-race.html"}}}
+<!-- {{{example url="../webgpu-compute-shaders-histogram-with-race.html"}}} -->
 
 What's wrong? Why doesn't this histogram match the previous histogram
 and why don't the totals match? Note: your computer might get different
@@ -779,7 +795,7 @@ fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
 
 With that our compute shader, that uses 1 workgroup invocation per pixel, works!
 
-{{{example url="../webgpu-compute-shaders-histogram-race-fixed.html"}}}
+<!-- {{{example url="../webgpu-compute-shaders-histogram-race-fixed.html"}}} -->
 
 ## Workgroups
 
@@ -790,15 +806,10 @@ in 3 dimensions, and then you call `dispatchWorkgroups` to run a bunch of these 
 Workgroups can share internal storage and coordinate that storage with in the workgroup
 itself. How could we take advantage of that fact?
 
--->
-
 Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations). We'll have
 each invocation work on at 256x1 section of the image. This will make it
 
 single
-<div class="webgpu_center">
-  <div data-diagram="single" style="display: inline-block; max-width: 100%; width: 700px;"></div>
-</div>
 
 race
 <div class="webgpu_center"><div data-diagram="race" style="display: inline-block; width: 700px;"></div></div>
