@@ -21,3 +21,20 @@
   height: 1.5em;
   display: block;
 }
+
+.compute-diagram {
+    background: #ddd;
+    max-width: 100%;
+    width: 100%;
+    padding-top: 2em;
+    padding-bottom: 2em;
+}
+.histogram-img {
+  background-color: #777;
+}
+
+@media (prefers-color-scheme: dark) {
+  .compute-diagram {
+    background: #222;
+  }
+}

@@ -585,7 +585,7 @@ design above we got none.
 
 Here's a diagram of what's happening using are small example image.
 
-<div class="webgpu_center">
+<div class="webgpu_center compute-diagram">
   <div data-diagram="single" style="display: inline-block; max-width: 100%; width: 700px;"></div>
 </div>
 
@@ -677,13 +677,13 @@ version on the left, and this version on the right
 </style>
 <div class="webgpu_center side-by-side local-img">
   <div style="display: flex; flex-direction: column">
-      <img src="resources/histogram-slow-color.png" class="nobg">
-      <img src="resources/histogram-slow-luminosity.png" class="nobg">
+      <img src="resources/histogram-slow-color.png" class="histogram-img">
+      <img src="resources/histogram-slow-luminosity.png" class="histogram-img">
       <div style="text-align: center;">Previous</div>
   </div>
   <div style="display: flex; flex-direction: column">
-      <img src="resources/histogram-race-color.png" class="nobg">
-      <img src="resources/histogram-race-luminosity.png" class="nobg">
+      <img src="resources/histogram-race-color.png" class="histogram-img">
+      <img src="resources/histogram-race-luminosity.png" class="histogram-img">
       <div style="text-align: center;">Current</div>
   </div>
 </div>
@@ -757,7 +757,11 @@ In other words, what's really happening in the code is this
    histogram[bin] = value;        // put back the entire bin, all 4 channels worth.
 ```
 
-<div class="webgpu_center"><div data-diagram="race" style="display: inline-block; width: 700px;"></div></div>
+You can see the problem visually in the diagram below. You'll see several invocations
+go and fetch the current value in the bin, add one to it, and put it back, each of
+oblivious that another invocation is reading and updating the same bin at the same time.
+
+<div class="webgpu_center compute-diagram"><div data-diagram="race" style="display: inline-block; width: 700px;"></div></div>
 
 WGSL has special instructions to solve this issue. This case we
 can use `atomicAdd`. `atomicAdd` makes the addition "atomic"
@@ -799,6 +803,12 @@ With that our compute shader, that uses 1 workgroup invocation per pixel, works!
 
 <!-- {{{example url="../webgpu-compute-shaders-histogram-race-fixed.html"}}} -->
 
+Unfortunately we have a new problem. `atomicAdd` effectively needs to block
+another invocation from updating the same bin at the same time. We can see
+the issue here.
+
+<div class="webgpu_center compute-diagram"><div data-diagram="noRace" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
+
 ## Workgroups
 
 Can we go faster? As mentioned in [the previous article](../webgpu-compute-shaders.html),
@@ -811,19 +821,15 @@ itself. How could we take advantage of that fact?
 Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations). We'll have
 each invocation work on at 256x1 section of the image. This will make it
 
-single
-
-race
-
-norace
-
-<div class="webgpu_center"><div data-diagram="noRace" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
 
 chunks
-<div class="webgpu_center"><div data-diagram="chunks" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
+<div class="webgpu_center compute-diagram"><div data-diagram="chunks" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
+
+sum
+<div class="webgpu_center compute-diagram"><div data-diagram="sum" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
 
 reduce
-<div class="webgpu_center"><div data-diagram="reduce" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
+<div class="webgpu_center compute-diagram"><div data-diagram="reduce" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
 
 
 # Drawing a histogram

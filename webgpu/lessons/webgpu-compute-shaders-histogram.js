@@ -109,6 +109,7 @@ function createBin(draw, color, size, lockColor) {
 // [0]
 // [0]
 const kBins = '🟥🟨🟦'.match(/../g);
+const numBins = kBins.length;
 function createChunk(draw, size, lockColor) {
   const group = draw.group();
   const bins = kBins.map((color, binNdx) => {
@@ -354,30 +355,54 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       kWaveSize,
       chunksAcross,
       chunksDown,
+      showImage,
     } = {
       single: {
         kWaveSize: 1,
         chunksAcross: 1,
         chunksDown: 1,
+        showImage: true,
       },
       race: {
         kWaveSize: 1,
         chunksAcross: 1,
         chunksDown: 1,
+        showImage: true,
+      },
+      noRace: {
+        kWaveSize: 1,
+        chunksAcross: 1,
+        chunksDown: 1,
+        showImage: true,
       },
       chunks: {
         kWaveSize: 3,
         chunksAcross: 7,
         chunksDown: 2,
+        showImage: true,
+      },
+      sum: {
+        kWaveSize: 3,
+        chunksAcross: 7,
+        chunksDown: 2,
+        showImage: false,
+      },
+      reduce: {
+        kWaveSize: 3,
+        chunksAcross: 7,
+        chunksDown: 2,
+        showImage: false,
       },
     }[type];
 
     const numChunks = chunksAcross * chunksDown;
     const pixelsAcross = image[0].length;
     const pixelsDown = image.length;
-    const imageWidth = pixelsAcross * size;
-    const imageHeight = pixelsDown * size;
+    const imageWidthH = pixelsAcross * size;
+    const imageWidth = showImage ? imageWidthH : 0;
+    const imageHeight = showImage ? pixelsDown * size : 0;
     const kChunksDrawWidth = chunksAcross * size;
+    const kChunkDrawHeight = size * 3.5;
     const imgPlusChunksDrawWidth = imageWidth + kChunksDrawWidth + (chunksAcross - 1) * size * 0 + size * 2.5;
     const kInvocationWidth = 2;
     const kInvocationHeight = 1.75;
@@ -385,11 +410,15 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
     const kWorkgroupDrawWidth  = size * (hasWorkgroupMem ? 4 : 4);
     const kWorkgroupDrawHeight = size * (kWaveSize * kInvocationHeight + 0.25);
     const kWorkgroupHeight = kInvocationHeight * kWaveSize * size;
-    const drawingWidth = imageWidth + size * 12;
-    const drawingHeight = imageHeight + size * 3 + kWorkgroupDrawHeight;
+    const drawingWidth = imageWidthH + size * 12;
+    const drawingHeight = showImage
+        ? imageHeight + size * 3 + kWorkgroupDrawHeight
+        : kWorkgroupDrawHeight + size * 3 + chunksDown * kChunkDrawHeight + (chunksDown - 1) * size * 0.25;
     const imgX = drawingWidth / 2 - imgPlusChunksDrawWidth / 2;
     const imgY = kWorkgroupHeight + size * 2;
-    const kChunksDrawX = imgX + imageWidth + size * 2.5;
+    const kChunksDrawX = showImage
+      ? imgX + imageWidth + size * 2.5
+      : drawingWidth / 2 - kChunksDrawWidth / 2;
 
     const coMgr = new CoroutineManager();
 
@@ -453,6 +482,10 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
           .fill(hsl(1 / 12 + id * 0.1, 0.7, lerp(0.4, 0.8, id / 2)))
           .stroke({width: 0.5})
           .hide();
+      const lockLine = group
+          .line(0, 0, 1, 1)
+          .stroke({color: 'red', width: size / 4})
+          .hide();
       const lockStop = group.image('/webgpu/lessons/resources/stop.svg').size(size, size).move((kWidth - size) / 2, size * 0.5).hide();
       const barrier = group.image('/webgpu/lessons/resources/barrier.svg').size(size, size).move((kWidth - size) / 2, size * 0.5).hide();
       const plus = group.group();
@@ -464,6 +497,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
         color,
         text,
         lock,
+        lockLine,
         lockStop,
         barrier,
         plus,
@@ -472,6 +506,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
           instructions.forEach(i => i.text('-'));
           lock.hide();
           lockStop.hide();
+          lockLine.hide();
           barrier.hide();
           plus.hide();
         },
@@ -485,7 +520,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
 
     function createWorkgroup(draw, size, lockColor) {
       const group = draw.group();
-      group.rect(kWorkgroupDrawWidth, kWorkgroupDrawHeight).move(size * 0, size * -0.25).fill('rgba(255, 255, 255, 0.125)');
+      group.rect(kWorkgroupDrawWidth, kWorkgroupDrawHeight).move(size * 0, size * -0.25).fill('#555');
       const invocations = [];
       for (let i = 0; i < kWaveSize; ++i) {
         const invocation = createInvocation(group, size, i);
@@ -530,11 +565,18 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       add.stop(1, '#640');
     }).from(0, 0).to(0.5, 1);
 
-    const img = createImage(draw, image, size);
-    img.group.transform({translateX: imgX, translateY: imgY});
+    if (showImage) {
+      const img = createImage(draw, image, size);
+      img.group.transform({translateX: imgX, translateY: imgY});
+      setTranslation(createLabel(draw, 'texture'), imgX + imageWidth / 2, imageHeight + imgY + size * 0.5);
+    }
 
-    setTranslation(createLabel(draw, 'texture'), imgX + imageWidth / 2, imageHeight + imgY + size * 0.5);
-    setTranslation(createLabel(draw, 'bins'), kChunksDrawX + kChunksDrawWidth / 2, imageHeight + imgY + size * 0.5);
+    setTranslation(
+        createLabel(draw, 'bins'),
+        kChunksDrawX + kChunksDrawWidth / 2,
+        showImage
+          ? imageHeight + imgY + size * 0.5
+          : imgY + kChunkDrawHeight * chunksDown + size * 0.5);
 
     const chunks = [];
     const chunkStorage = [];
@@ -542,7 +584,9 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       const x = i % (numChunks / 2);
       const y = chunksDown > 1 ? (i / (numChunks / 2) | 0) : 0.5;
       const chunk = createChunk(draw, size, lockGradient);
-      chunk.group.transform({translateX: kChunksDrawX + x * size, translateY: imgY + size * 0.25 + size * 3.5 * y});
+      chunk.group.transform({
+        translateX: kChunksDrawX + x * size,
+        translateY: imgY + size * 0.25 + kChunkDrawHeight * y});
       chunks.push(chunk);
       chunkStorage.push(new Array(kBins).fill(0));
     }
@@ -563,11 +607,14 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
     // draw.rect(drawingWidth - 4, 4).move(2, 0).fill('pink');
 
     const workForWorkgroups = [];
+    const storageBinLocked = new Array(numBins).fill(0);
+    let activeWorkgroupCount = 0;
+    let uniformStride = 0;
 
     workGroups.forEach((workgroup, workgroupId) => {
       const workForCores = [];
       const workgroupStorage = new Array(kWaveSize).fill(0);
-      let activeCount = 0;
+      let activeInvocationCount = 0;
       const workgroupBinLocked = new Array(workgroup.invocations.length).fill(false);
       let workgroupBarrierCount = 0;
 
@@ -605,9 +652,10 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
         });
 
         const line = ig.line(sx, sy, ex, ey)
-          .stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)')
+          .stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.5)')
           .marker('end', oMarker)
           .hide();
+        line.node.style.mixBlendMode = 'difference';
         const rect = ig.rect(10, 10).center(0, 0).fill('none').stroke({color: '#000', width: 0.5}).hide();
         const text = makeText(ig, '').font({anchor: 'middle'});
         text.attr({cx: 0, cy: 0, 'dominant-baseline': 'central'});
@@ -615,6 +663,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
 
         function* goto(targetX, targetY, duration = 1) {
           line.show();
+          markerCircle.show();
           yield lerpStep(t => {
             const x = lerp(ex, targetX, t);
             const y = lerp(ey, targetY, t);
@@ -659,55 +708,100 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
           rect.hide();
         }
 
+        function* doOne(tx, ty, useBarrier) {
+          // read texture
+          const texel = image[ty][tx];
+          const color = unicodeColorsToCSS[texel];
+          yield textureLoad(tx, ty, texel);
+          const binNdx = texelColorToBinNdx[texel];
+          const chunk = chunks[0];
+          const storageBin = chunk.bins[binNdx];
+
+          if (useBarrier) {
+            line.hide();
+            markerCircle.hide();
+
+            // wait for bin to be free
+            yield invocation.setInstructions('atomicAdd(&bin[color], 1)');
+            invocation.lockStop.show();
+            while (storageBinLocked[binNdx]) {
+              yield;
+            }
+            invocation.lockStop.hide();
+
+            // lock bin
+            storageBinLocked[binNdx] = true;
+            storageBin.lock.show();
+            {
+              const toInvocation = getTransformToElement(invocation.group.node, storageBin.group.node);
+              const toColor = getTransformToElement(invocation.group.node, invocation.color.node);
+              const p2 = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
+              const p1 = new DOMPoint(size / 4, size / 4).matrixTransform(toColor);
+              invocation.lockLine
+                .show()
+                .plot(p2.x, p2.y, p1.x, p1.y)
+                .stroke(color)
+                .css({
+                  opacity: '0.5',
+                });
+            }
+          } else {
+            yield invocation.setInstructions('bin[color] += 1');
+          }
+
+          // get value for bin
+          const chunkBin = chunk.bins[binNdx];
+//                const toInvocation = getTransformToElement(invocation.group.node, chunkBin.group.node);
+          const chunkBinPosition = getBinPosition(draw, chunkBin, size);
+          yield goto(...chunkBinPosition);
+
+          text.text(chunkBin.text.text());
+
+          yield goto(numX, numY);
+          invocation.text.text(text.text());
+          text.text('');
+
+          // inc
+          invocation.text.text(parseInt(invocation.text.text()) + 1);
+          yield scaleAndFade(invocation.plus);
+
+          // put in bin
+          text.text(invocation.text.text());
+          yield goto(...chunkBinPosition);
+          chunkBin.text.text(text.text());
+          text.text('');
+          yield;
+
+          if (useBarrier) {
+            storageBinLocked[binNdx] = false;
+            storageBin.lock.hide();
+            storageBin.lockText.hide();
+            invocation.lockLine.hide();
+          }
+
+          yield fadeLine();
+          invocation.color.fill('#888');
+          invocation.text.text('');
+          yield invocation.setInstructions('-');
+        }
+
         const shaders = {
           single: function*() {
             for (let ty = 0; ty < pixelsDown; ++ty) {
               for (let tx = 0; tx < pixelsAcross; ++tx) {
-                // read texture
-                const texel = image[ty][tx];
-                const color = unicodeColorsToCSS[texel];
-                yield textureLoad(tx, ty, texel);
-
-                yield invocation.setInstructions('bin[color] += 1');
-
-                // get value for bin
-                const binNdx = texelColorToBinNdx[texel];
-                const chunk = chunks[0];
-                const chunkBin = chunk.bins[binNdx];
-//                const toInvocation = getTransformToElement(invocation.group.node, chunkBin.group.node);
-                const chunkBinPosition = getBinPosition(draw, chunkBin, size);
-                yield goto(...chunkBinPosition);
-
-                text.text(chunkBin.text.text());
-
-                yield goto(numX, numY);
-                invocation.text.text(text.text());
-                text.text('');
-
-                // inc
-                invocation.text.text(parseInt(invocation.text.text()) + 1);
-                yield scaleAndFade(invocation.plus);
-
-                // put in bin
-                text.text(invocation.text.text());
-                yield goto(...chunkBinPosition);
-                chunkBin.text.text(text.text());
-                text.text('');
-                yield fadeLine();
-                invocation.color.fill('#888');
-                invocation.text.text('');
-                yield invocation.setInstructions('-');
+                yield doOne(tx, ty, false);
               }
             }
           },
           race: function*({global_invocation_id}) {
             const tx = global_invocation_id.x;
             const ty = global_invocation_id.y;
-
-            // read texture
-            const texel = image[ty][tx];
-            const color = unicodeColorsToCSS[texel];
-            yield textureLoad(tx, ty, texel);
+            yield doOne(tx, ty, false);
+          },
+          noRace: function*({global_invocation_id}) {
+            const tx = global_invocation_id.x;
+            const ty = global_invocation_id.y;
+            yield doOne(tx, ty, true);
           },
           chunks: function*({global_invocation_id, local_invocation_id}) {
             workgroupStorage[local_invocation_id.x] = 0;
@@ -723,36 +817,30 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
 
             const binNdx = texelColorToBinNdx[texel];
             // wait for bin to be free
-            yield invocation.setInstructions('atomicAdd');
+            yield invocation.setInstructions('atomicAdd(bin[color], 1)');
             invocation.lockStop.show();
             while (workgroupBinLocked[binNdx]) {
-  //            markerCircle.stroke({width: 5, color: 'red'});//rgba(255, 255, 0, ${elapsedTime * 10 % 1 * 0.5})`);
               yield;
             }
             invocation.lockStop.hide();
-  //          markerCircle.stroke('rgba(255, 255, 255, 0.25)');
 
             // lock bin
             workgroupBinLocked[binNdx] = true;
             const workgroupBin = workgroup.chunk.bins[binNdx];
             const binPosition = getBinPosition(draw, workgroupBin, size);
             workgroupBin.lock.show();
-            //workgroupBin.lockText.text(local_invocation_id.x).show();
             {
               const toInvocation = getTransformToElement(invocation.group.node, workgroupBin.group.node);
-              // const toColor = getTransformToElement(invocation.group.node, invocation.color.node);
-              // const p1 = new DOMPoint(0, 0).matrixTransform(toColor);
-              const p2 = new DOMPoint(0, 0).matrixTransform(toInvocation);
-              invocation.lock.show();
-              const lx0 = size * 1.75;
-              const ly0 = size * 0.75;
-              const [lx1, ly1] = [p2.x, p2.y];
-              invocation.lock.plot([
-                [lx0, ly0],
-                [lx1, ly1 + size * 0.25],
-                [lx1, ly1 + size * 0.75],
-                [lx0, ly0 + size * 0.5],
-              ]).fill(color);
+              const toColor = getTransformToElement(invocation.group.node, invocation.color.node);
+              const p2 = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
+              const p1 = new DOMPoint(size / 4, size / 4).matrixTransform(toColor);
+              invocation.lockLine
+                .show()
+                .plot(p2.x, p2.y, p1.x, p1.y)
+                .stroke(color)
+                .css({
+                  opacity: '0.5',
+                });
             }
 
             // get bin value
@@ -781,15 +869,13 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
             workgroupBinLocked[binNdx] = false;
             workgroupBin.lock.hide();
             workgroupBin.lockText.hide();
-            invocation.lock.hide();
+            invocation.lockLine.hide();
 
             // wait for others
             invocation.color.fill('#888');
             invocation.barrier.show();
             yield invocation.setInstructions('wGroupBarrier');
-  //          markerCircle.stroke('rgba(0, 0, 0, 0.25)');
             yield workgroupBarrier();
-  //          markerCircle.stroke('rgba(255, 255, 255, 0.25)');
             invocation.barrier.hide();
 
             // copy bin to chunk
@@ -816,6 +902,27 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
             invocation.text.text('');
             yield invocation.setInstructions('-');
           },
+          sum: function*({global_invocation_id, local_invocation_id}) {
+            for (let chunkNdx = 0; chunkNdx < numChunks; ++chunkNdx) {
+              const chunk = chunks[chunkNdx];
+              const chunkBin = chunk.bins[local_invocation_id.x];
+              const chunkBinPosition = getBinPosition(draw, chunkBin, size);
+              yield goto(...chunkBinPosition);
+              chunkBin.text.text(binTotal);
+
+              const srcBin = workgroup.chunk.bins[local_invocation_id.x];
+              const srcBinPosition = getBinPosition(draw, srcBin, size);
+              yield goto(...srcBinPosition);
+              const binTotal = workgroupStorage[local_invocation_id.x];
+              text.text(binTotal);
+              yield goto(numX, numY);
+              invocation.text.text(binTotal);
+
+            }
+          },
+          reduce: function*({global_invocation_id, local_invocation_id}) {
+            //
+          },
         };
 
         const runner = coMgr.createRunner();
@@ -824,10 +931,10 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
             while (workForCores.length === 0) {
               yield;
             }
-            ++activeCount;
+            ++activeInvocationCount;
             const { global_invocation_id, local_invocation_id } = workForCores.shift();
             yield shaders[type]({global_invocation_id, local_invocation_id});
-            --activeCount;
+            --activeInvocationCount;
           }
         }());
 
@@ -840,14 +947,16 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
           while (workForWorkgroups.length === 0) {
             yield;
           }
+          ++activeWorkgroupCount;
           const global_invocation_id = workForWorkgroups.shift();
           for (let i = 0; i < kWaveSize; ++i) {
             workForCores.push({global_invocation_id, local_invocation_id: {x: i}});
           }
           yield;
-          while (activeCount > 0) {
+          while (activeInvocationCount > 0) {
             yield;
           }
+          --activeWorkgroupCount;
         }
       }());
     });
@@ -860,15 +969,41 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       }
     }
 
+    function* waitForWorkgroups() {
+      yield;
+      while (activeWorkgroupCount > 0) {
+        yield;
+      }
+      yield;
+    }
+
     const dispatchers = {
-      single() {
+      single: function*() {
         dispatchWorkgroups(1, 1);
       },
-      race() {
+      race: function*() {
         dispatchWorkgroups(pixelsAcross, pixelsDown);
       },
-      chunks() {
+      noRace: function*() {
+        dispatchWorkgroups(pixelsAcross, pixelsDown);
+      },
+      chunks: function*() {
         dispatchWorkgroups(pixelsAcross / kWaveSize, pixelsDown);
+      },
+      sum: function*() {
+        dispatchWorkgroups(1, 1);
+      },
+      reduce: function*() {
+        let chunksLeft = numChunks;
+        let i = 0;
+        while (chunksLeft) {
+          uniformStride = 2 ** i;
+          ++i;
+          const dispatchCount = Math.floor(chunksLeft / 2);
+          chunksLeft -= dispatchCount;
+          dispatchWorkgroups(dispatchCount, 1);
+          yield waitForWorkgroups();
+        }
       },
     };
 
@@ -879,7 +1014,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
   //      const waves = [...workGroups];
 
       // make list of workgroup to dispatch
-      dispatchers[type]();
+      yield dispatchers[type]();
 
       for (;;) {
         yield;
@@ -1007,6 +1142,9 @@ renderDiagrams({
     const uiDiv = el('div');
     const div = el('div', {}, [diagramDiv, uiDiv]);
     elem.appendChild(div);
+    makeComputeDiagram(diagramDiv, uiDiv, {
+      type: 'noRace',
+    });
   },
   /*
    [ | | ] [ | | ]
@@ -1039,15 +1177,23 @@ renderDiagrams({
     [][][][][][][][][][]
     [][][][][][][][][][]
   */
+  sum(elem) {
+    const diagramDiv = el('div');
+    const uiDiv = el('div');
+    const div = el('div', {}, [diagramDiv, uiDiv]);
+    elem.appendChild(div);
+    makeComputeDiagram(diagramDiv, uiDiv, {
+      type: 'reduce',
+    });
+  },
   reduce(elem) {
     const diagramDiv = el('div');
     const uiDiv = el('div');
     const div = el('div', {}, [diagramDiv, uiDiv]);
     elem.appendChild(div);
-    const totalWidth = 400;
-    const totalHeight = 400;
-    const draw = svg().addTo(diagramDiv).viewbox(0, 0, totalWidth, totalHeight);
-    //createImage(draw, image, 20);
+    makeComputeDiagram(diagramDiv, uiDiv, {
+      type: 'reduce',
+    });
   },
 });
 
