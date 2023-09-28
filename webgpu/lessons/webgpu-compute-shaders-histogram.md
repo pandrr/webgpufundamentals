@@ -757,6 +757,8 @@ In other words, what's really happening in the code is this
    histogram[bin] = value;        // put back the entire bin, all 4 channels worth.
 ```
 
+<div class="webgpu_center"><div data-diagram="race" style="display: inline-block; width: 700px;"></div></div>
+
 WGSL has special instructions to solve this issue. This case we
 can use `atomicAdd`. `atomicAdd` makes the addition "atomic"
 meaning that it prevents one invocation for updating the value
@@ -812,7 +814,6 @@ each invocation work on at 256x1 section of the image. This will make it
 single
 
 race
-<div class="webgpu_center"><div data-diagram="race" style="display: inline-block; width: 700px;"></div></div>
 
 norace
 
