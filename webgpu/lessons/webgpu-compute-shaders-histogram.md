@@ -763,10 +763,11 @@ oblivious that another invocation is reading and updating the same bin at the sa
 
 <div class="webgpu_center compute-diagram"><div data-diagram="race" style="display: inline-block; width: 700px;"></div></div>
 
-WGSL has special instructions to solve this issue. This case we
-can use `atomicAdd`. `atomicAdd` makes the addition "atomic"
-meaning that it prevents one invocation for updating the value
-at the same time.
+WGSL has special "atomic" instructions to solve this issue. This case we
+can use `atomicAdd`. `atomicAdd` makes the addition "atomic" which
+means rather than 3 operations, load->add->store, all 3 operations
+happen at once "atomically". This effectively prevents more than
+two invocations from updating the value at the same time.
 
 atomic functions have the requirement that they only work on
 `i32` or `u32` and they require to data itself to be of type `atomic`.
@@ -793,8 +794,8 @@ fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
   for (var ch = 0; ch < 4; ch++) {
     let v = select(color[ch], luminance, ch == 3);
     let ndx = min(u32(v * numBins), lastBinIndex);
--   histogram[bin][ch] += 1;
-    atomicAdd(&histogram[ndx][ch], 1u);
+-    histogram[bin][ch] += 1;
++    atomicAdd(&histogram[ndx][ch], 1u);
   }
 }
 ```
@@ -805,14 +806,19 @@ With that our compute shader, that uses 1 workgroup invocation per pixel, works!
 
 Unfortunately we have a new problem. `atomicAdd` effectively needs to block
 another invocation from updating the same bin at the same time. We can see
-the issue here.
+the issue here. The diagram below shows `atomicAdd` as 3 operations
+but when an invocation is doing an `atomicAdd` it "locks the bin"
+so that another invocation has to wait until it's done. When
+an invocation is locking a bin it will have a line from the invocation
+to the bin in the color of the bin. Invocations that are waiting for
+that bin to unlock will have a stop sign on them.
 
 <div class="webgpu_center compute-diagram"><div data-diagram="noRace" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
 
 ## Workgroups
 
 Can we go faster? As mentioned in [the previous article](../webgpu-compute-shaders.html),
-the "workgroup" is the smallest unit of work a GPU can do. You define the size of a workgroup
+the "workgroup" is the smallest unit of work we can ask the GPU can do. You define the size of a workgroup
 in 3 dimensions, and then you call `dispatchWorkgroups` to run a bunch of these workgroups.
 
 Workgroups can share internal storage and coordinate that storage with in the workgroup
@@ -820,6 +826,7 @@ itself. How could we take advantage of that fact?
 
 Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations). We'll have
 each invocation work on at 256x1 section of the image. This will make it
+
 
 
 chunks

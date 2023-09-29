@@ -115,7 +115,7 @@ function createBin(draw, color, size, lockColor) {
     weight: 'bold',
     size: '8',
   }).move(0, -2).fill('rgba(0, 0, 0, 0.5)').hide();
-  const cover = group.rect(size, size).fill(rgba(0, 0, 0, 0.25)).hide();
+  const cover = group.rect(size, size).fill(rgba(0, 0, 0, 0.5)).hide();
   return {
     group,
     text,
@@ -838,6 +838,45 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
           yield invocation.setInstructions('-');
         }
 
+        function* reduceImpl({global_invocation_id, local_invocation_id}, numChunks) {
+          invocation.text.text('0');
+          const baseChunkNdx = global_invocation_id.x * uniformStride * 2;
+          for (let ndx = 0; ndx < numChunks; ++ndx) {
+            const chunkNdx = baseChunkNdx + ndx * uniformStride;
+            yield invocation.setInstructions(`total += chunks[${chunkNdx}]`);
+            const { chunkBinPosition, chunkValue } = getChunkInfo(chunkNdx, local_invocation_id.x);
+            yield goto(...chunkBinPosition);
+            text.text(chunkValue);
+
+            yield goto(numX, numY);
+            text.text('');
+            line.hide();
+            markerCircle.hide();
+
+            const total = parseInt(invocation.text.text());
+            invocation.text.text(total + chunkValue);
+            yield scaleAndFade(invocation.plus);
+          }
+
+          {
+            text.text(invocation.text.text());
+            yield invocation.setInstructions(`chunks[${baseChunkNdx}][${local_invocation_id.x}] = total`);
+            const { chunkBinPosition, chunkBin } = getChunkInfo(baseChunkNdx, local_invocation_id.x);
+            yield goto(...chunkBinPosition);
+            chunkBin.text.text(invocation.text.text());
+
+            for (let ndx = 1; ndx < numChunks; ++ndx) {
+              const chunkNdx = baseChunkNdx + ndx * uniformStride;
+              const { chunkBin } = getChunkInfo(chunkNdx, local_invocation_id.x);
+              chunkBin.cover.show();
+            }
+
+            text.text('');
+            yield fadeLine();
+          }
+          yield invocation.setInstructions('-');
+        }
+
         const shaders = {
           single: function*() {
             for (let ty = 0; ty < pixelsDown; ++ty) {
@@ -955,42 +994,11 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
             invocation.text.text('');
             yield invocation.setInstructions('-');
           },
-          sum: function*({global_invocation_id, local_invocation_id}) {
-
-            for (let chunkNdx = 0; chunkNdx < numChunks; ++chunkNdx) {
-              yield invocation.setInstructions(`total += chunks[${chunkNdx}]`);
-              const { chunkBinPosition, chunkValue } = getChunkInfo(chunkNdx, local_invocation_id.x);
-              yield goto(...chunkBinPosition);
-              text.text(chunkValue);
-
-              yield goto(numX, numY);
-              text.text('');
-              line.hide();
-              markerCircle.hide();
-
-              const total = parseInt(invocation.text.text());
-              invocation.text.text(total + chunkValue);
-              yield scaleAndFade(invocation.plus);
-            }
-
-            {
-              text.text(invocation.text.text());
-              yield invocation.setInstructions(`chunks[0][${local_invocation_id.x}] = total`);
-              const { chunkBinPosition, chunkBin } = getChunkInfo(0, local_invocation_id.x);
-              yield goto(...chunkBinPosition);
-              chunkBin.text.text(invocation.text.text());
-
-              for (let chunkNdx = 1; chunkNdx < numChunks; ++chunkNdx) {
-                const { chunkBin } = getChunkInfo(chunkNdx, local_invocation_id.x);
-                chunkBin.cover.show();
-              }
-
-              yield fadeLine();
-            }
-            yield invocation.setInstructions('-');
+          sum: function*(invocationIds) {
+            yield reduceImpl(invocationIds, numChunks);
           },
-          reduce: function*({global_invocation_id, local_invocation_id}) {
-            //
+          reduce: function*(invocationIds) {
+            yield reduceImpl(invocationIds, 2);
           },
         };
 
@@ -1060,6 +1068,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
         dispatchWorkgroups(pixelsAcross / kWaveSize, pixelsDown);
       },
       sum: function*() {
+        uniformStride = 1;
         dispatchWorkgroups(1, 1);
       },
       reduce: function*() {
