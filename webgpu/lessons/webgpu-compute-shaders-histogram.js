@@ -54,6 +54,25 @@ const unicodeBinColorsToCSS = {
   '🟦': '#008',
 };
 
+
+const imgChunkData = [];
+
+{
+  const numBins = 3;
+  const numChunks = 14;
+  for (let chunkNdx = 0; chunkNdx < numChunks; ++chunkNdx) {
+    const data = new Array(numBins).fill(0);
+    const xOff = (chunkNdx % 2) * numBins;
+    const yOff = chunkNdx / 2 | 0;
+    for (let x = 0; x < numBins; ++x) {
+      const color = image[yOff][xOff + x];
+      const binNdx = texelColorToBinNdx[color];
+      ++data[binNdx];
+    }
+    imgChunkData.push(data);
+  }
+}
+
 function createImage(draw, image, size) {
   const group = draw.group();
   image.forEach((pixels, y) => {
@@ -96,12 +115,14 @@ function createBin(draw, color, size, lockColor) {
     weight: 'bold',
     size: '8',
   }).move(0, -2).fill('rgba(0, 0, 0, 0.5)').hide();
+  const cover = group.rect(size, size).fill(rgba(0, 0, 0, 0.25)).hide();
   return {
     group,
     text,
     rect,
     lock,
     lockText,
+    cover,
   };
 }
 
@@ -307,7 +328,6 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
   let deltaTime = 0;
   let speed = 1;
   let playing = true;
-  const hasWorkgroupMem = type === 'chunks';
 
   const speeds = [0.25, 0.5, 1, 2, 4];
 
@@ -356,42 +376,59 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       chunksAcross,
       chunksDown,
       showImage,
+      numWorkgroups,
+      hasWorkgroupMem,
+      useImageData,
     } = {
       single: {
+        numWorkgroups: 1,
         kWaveSize: 1,
+        hasWorkgroupMem: false,
         chunksAcross: 1,
         chunksDown: 1,
         showImage: true,
       },
       race: {
+        numWorkgroups: 4,
         kWaveSize: 1,
+        hasWorkgroupMem: false,
         chunksAcross: 1,
         chunksDown: 1,
         showImage: true,
       },
       noRace: {
+        numWorkgroups: 4,
         kWaveSize: 1,
+        hasWorkgroupMem: false,
         chunksAcross: 1,
         chunksDown: 1,
         showImage: true,
       },
       chunks: {
+        numWorkgroups: 4,
         kWaveSize: 3,
+        hasWorkgroupMem: true,
         chunksAcross: 7,
         chunksDown: 2,
         showImage: true,
       },
       sum: {
+        numWorkgroups: 1,
+        hasWorkgroupMem: false,
         kWaveSize: 3,
         chunksAcross: 7,
         chunksDown: 2,
         showImage: false,
+        useImageData: true,
       },
       reduce: {
+        numWorkgroups: 4,
         kWaveSize: 3,
+        hasWorkgroupMem: false,
         chunksAcross: 7,
         chunksDown: 2,
         showImage: false,
+        useImageData: true,
       },
     }[type];
 
@@ -589,10 +626,13 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
         translateY: imgY + size * 0.25 + kChunkDrawHeight * y});
       chunks.push(chunk);
       chunkStorage.push(new Array(kBins).fill(0));
+      if (useImageData) {
+        const chunkData = imgChunkData[i];
+        chunkData.forEach((v, ndx) => chunk.bins[ndx].text.text(v));
+      }
     }
 
     setTranslation(createLabel(draw, 'workgroups'), drawingWidth / 2, size * 0.5);
-    const numWorkgroups = type === 'single' ? 1 : 4;
     const workGroups = [];
     for (let i = 0; i < numWorkgroups; ++i) {
       const workGroup = createWorkgroup(draw, size, lockGradient);
@@ -605,6 +645,19 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
     // draw.rect(kWorkgroupDrawWidth, 8).move(drawingWidth / 2, 10).fill('green');
     // draw.rect(4, 20).move(drawingWidth / 2 - 2, 0).fill('orange');
     // draw.rect(drawingWidth - 4, 4).move(2, 0).fill('pink');
+
+    function getChunkInfo(chunkNdx, binNdx) {
+      const chunk = chunks[chunkNdx];
+      const chunkBin = chunk.bins[binNdx];
+      const chunkBinPosition = getBinPosition(draw, chunkBin, size);
+      const chunkValue = parseInt(chunkBin.text.text());
+      return {
+        chunk,
+        chunkBin,
+        chunkBinPosition,
+        chunkValue,
+      };
+    }
 
     const workForWorkgroups = [];
     const storageBinLocked = new Array(numBins).fill(0);
@@ -903,22 +956,38 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
             yield invocation.setInstructions('-');
           },
           sum: function*({global_invocation_id, local_invocation_id}) {
+
             for (let chunkNdx = 0; chunkNdx < numChunks; ++chunkNdx) {
-              const chunk = chunks[chunkNdx];
-              const chunkBin = chunk.bins[local_invocation_id.x];
-              const chunkBinPosition = getBinPosition(draw, chunkBin, size);
+              yield invocation.setInstructions(`total += chunks[${chunkNdx}]`);
+              const { chunkBinPosition, chunkValue } = getChunkInfo(chunkNdx, local_invocation_id.x);
               yield goto(...chunkBinPosition);
-              chunkBin.text.text(binTotal);
+              text.text(chunkValue);
 
-              const srcBin = workgroup.chunk.bins[local_invocation_id.x];
-              const srcBinPosition = getBinPosition(draw, srcBin, size);
-              yield goto(...srcBinPosition);
-              const binTotal = workgroupStorage[local_invocation_id.x];
-              text.text(binTotal);
               yield goto(numX, numY);
-              invocation.text.text(binTotal);
+              text.text('');
+              line.hide();
+              markerCircle.hide();
 
+              const total = parseInt(invocation.text.text());
+              invocation.text.text(total + chunkValue);
+              yield scaleAndFade(invocation.plus);
             }
+
+            {
+              text.text(invocation.text.text());
+              yield invocation.setInstructions(`chunks[0][${local_invocation_id.x}] = total`);
+              const { chunkBinPosition, chunkBin } = getChunkInfo(0, local_invocation_id.x);
+              yield goto(...chunkBinPosition);
+              chunkBin.text.text(invocation.text.text());
+
+              for (let chunkNdx = 1; chunkNdx < numChunks; ++chunkNdx) {
+                const { chunkBin } = getChunkInfo(chunkNdx, local_invocation_id.x);
+                chunkBin.cover.show();
+              }
+
+              yield fadeLine();
+            }
+            yield invocation.setInstructions('-');
           },
           reduce: function*({global_invocation_id, local_invocation_id}) {
             //
@@ -1183,7 +1252,7 @@ renderDiagrams({
     const div = el('div', {}, [diagramDiv, uiDiv]);
     elem.appendChild(div);
     makeComputeDiagram(diagramDiv, uiDiv, {
-      type: 'reduce',
+      type: 'sum',
     });
   },
   reduce(elem) {
