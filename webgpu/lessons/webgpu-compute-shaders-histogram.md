@@ -58,10 +58,8 @@ On the left we have 3 graphs overlaying each other. They show the
 counts for the various red, green, and blue values of the pixels.
 We can see there is lots of red and green but not nearly as much
 blue except in the low-light areas.
-
 On the right we have a single graph of the luminosity values of
-the pixels. The high bump to the right of center means that most
-pixels are brighter than the 50% brightness level.
+the pixels. 
 
 Computing an image histogram is pretty simple. Let's first do it in JavaScript
 
@@ -808,7 +806,14 @@ Unfortunately we have a new problem. `atomicAdd` effectively needs to block
 another invocation from updating the same bin at the same time. We can see
 the issue here. The diagram below shows `atomicAdd` as 3 operations
 but when an invocation is doing an `atomicAdd` it "locks the bin"
-so that another invocation has to wait until it's done. When
+so that another invocation has to wait until it's done.
+
+<div class="webgpu_center compute-diagram">
+  <div>Two workgroups, one locking the blue bin, the other blocked from using the same blue bin</div>
+  <div data-diagram="lockedBin" style="display: inline-block; max-width: 100%; width: 700px;"></div>
+</div>
+
+When
 an invocation is locking a bin it will have a line from the invocation
 to the bin in the color of the bin. Invocations that are waiting for
 that bin to unlock will have a stop sign on them.

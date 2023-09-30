@@ -323,7 +323,24 @@ const updateColorScheme = () => {
 };
 updateColorScheme();
 
-function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
+function makeComputeDiagram(elem, {
+  type,
+  kWaveSize,
+  chunksAcross,
+  chunksDown,
+  showImage,
+  numWorkgroups,
+  hasWorkgroupMem,
+  useImageData,
+  hideUI,
+  workGroupsLabel = 'workgroups',
+  bottomLabel = 'bins',
+}) {
+  const diagramDiv = el('div');
+  const uiDiv = el('div');
+  const div = el('div', {}, [diagramDiv, uiDiv]);
+  elem.appendChild(div);
+
   let elapsedTime = 0;
   let deltaTime = 0;
   let speed = 1;
@@ -347,16 +364,18 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
     pause.style.display = playing ? '' : 'none';
   };
 
-  uiDiv.appendChild(el('div', { className: 'ui'}, [
-    el('button', {type: 'button', onClick: reset }, [el('img', {src: '/webgpu/lessons/resources/rewind.svg'})]),
-    el('button', {type: 'button', onClick: playPause }, [
-      el('img', { dataset: {id: 'pause'}, src: '/webgpu/lessons/resources/pause.svg'}),
-      el('img', { style: { display: 'none' }, dataset: {id: 'play'}, src: '/webgpu/lessons/resources/play.svg'}),
-    ]),
-    select('', ['¼x', '½x', '1x', '2x', '4x'], 2, function(ndx) {
-      speed = speeds[ndx];
-    }),
-  ]));
+  if (!hideUI) {
+    uiDiv.appendChild(el('div', { className: 'ui'}, [
+      el('button', {type: 'button', onClick: reset }, [el('img', {src: '/webgpu/lessons/resources/rewind.svg'})]),
+      el('button', {type: 'button', onClick: playPause }, [
+        el('img', { dataset: {id: 'pause'}, src: '/webgpu/lessons/resources/pause.svg'}),
+        el('img', { style: { display: 'none' }, dataset: {id: 'play'}, src: '/webgpu/lessons/resources/play.svg'}),
+      ]),
+      select('', ['¼x', '½x', '1x', '2x', '4x'], 2, function(ndx) {
+        speed = speeds[ndx];
+      }),
+    ]));
+  }
 
   let then = 0;
   const update = (now) => {
@@ -371,67 +390,6 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
   function createComputeDiagram() {
     const size = 20;
 
-    const {
-      kWaveSize,
-      chunksAcross,
-      chunksDown,
-      showImage,
-      numWorkgroups,
-      hasWorkgroupMem,
-      useImageData,
-    } = {
-      single: {
-        numWorkgroups: 1,
-        kWaveSize: 1,
-        hasWorkgroupMem: false,
-        chunksAcross: 1,
-        chunksDown: 1,
-        showImage: true,
-      },
-      race: {
-        numWorkgroups: 4,
-        kWaveSize: 1,
-        hasWorkgroupMem: false,
-        chunksAcross: 1,
-        chunksDown: 1,
-        showImage: true,
-      },
-      noRace: {
-        numWorkgroups: 4,
-        kWaveSize: 1,
-        hasWorkgroupMem: false,
-        chunksAcross: 1,
-        chunksDown: 1,
-        showImage: true,
-      },
-      chunks: {
-        numWorkgroups: 4,
-        kWaveSize: 3,
-        hasWorkgroupMem: true,
-        chunksAcross: 7,
-        chunksDown: 2,
-        showImage: true,
-      },
-      sum: {
-        numWorkgroups: 1,
-        hasWorkgroupMem: false,
-        kWaveSize: 3,
-        chunksAcross: 7,
-        chunksDown: 2,
-        showImage: false,
-        useImageData: true,
-      },
-      reduce: {
-        numWorkgroups: 4,
-        kWaveSize: 3,
-        hasWorkgroupMem: false,
-        chunksAcross: 7,
-        chunksDown: 2,
-        showImage: false,
-        useImageData: true,
-      },
-    }[type];
-
     const numChunks = chunksAcross * chunksDown;
     const pixelsAcross = image[0].length;
     const pixelsDown = image.length;
@@ -441,18 +399,18 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
     const kChunksDrawWidth = chunksAcross * size;
     const kChunkDrawHeight = size * 3.5;
     const imgPlusChunksDrawWidth = imageWidth + kChunksDrawWidth + (chunksAcross - 1) * size * 0 + size * 2.5;
-    const kInvocationWidth = 2;
+    const kInvocationWidth = numWorkgroups > 2 ? 2 : 4;
     const kInvocationHeight = 1.75;
     const kInvocationDrawWidth = size * (kInvocationWidth + (hasWorkgroupMem ? 0 : 1.5));
-    const kWorkgroupDrawWidth  = size * (hasWorkgroupMem ? 4 : 4);
+    const kWorkgroupY = size * 1.5;
+    const kWorkgroupDrawWidth = kInvocationDrawWidth + size * (hasWorkgroupMem ? 2 : 0.5);
     const kWorkgroupDrawHeight = size * (kWaveSize * kInvocationHeight + 0.25);
-    const kWorkgroupHeight = kInvocationHeight * kWaveSize * size;
     const drawingWidth = imageWidthH + size * 12;
     const drawingHeight = showImage
         ? imageHeight + size * 3 + kWorkgroupDrawHeight
         : kWorkgroupDrawHeight + size * 3 + chunksDown * kChunkDrawHeight + (chunksDown - 1) * size * 0.25;
     const imgX = drawingWidth / 2 - imgPlusChunksDrawWidth / 2;
-    const imgY = kWorkgroupHeight + size * 2;
+    const imgY = kWorkgroupY + kWorkgroupDrawHeight + (showImage ? size * 0.5 : 0);
     const kChunksDrawX = showImage
       ? imgX + imageWidth + size * 2.5
       : drawingWidth / 2 - kChunksDrawWidth / 2;
@@ -463,7 +421,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       let time = 0;
       for (let t = 0; t < 1;) {
         time += deltaTime * speed * (playing ? 1 : 0);
-        t = coMgr.isSeeking ? 1 : clamp01(time / duration);
+        t = (coMgr.isSeeking || duration <= 0) ? 1 : clamp01(time / duration);
         fn(t, t === 1);
         if (t < 1) {
           yield;
@@ -538,7 +496,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
         lockStop,
         barrier,
         plus,
-        setInstructions: text => setInstructions(instructionsGroup, instructions, text),
+        setInstructions: (text, duration = 0.5) => setInstructions(instructionsGroup, instructions, text, duration),
         reset: () => {
           instructions.forEach(i => i.text('-'));
           lock.hide();
@@ -550,9 +508,9 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       };
     }
 
-    function* setInstructions(instructionGroup, instructions, text) {
+    function* setInstructions(instructionGroup, instructions, text, duration) {
       coMgr.addStep();
-      yield scrollText(instructionGroup, instructions, text);
+      yield scrollText(instructionGroup, instructions, text, duration);
     }
 
     function createWorkgroup(draw, size, lockColor) {
@@ -609,7 +567,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
     }
 
     setTranslation(
-        createLabel(draw, 'bins'),
+        createLabel(draw, bottomLabel),
         kChunksDrawX + kChunksDrawWidth / 2,
         showImage
           ? imageHeight + imgY + size * 0.5
@@ -623,7 +581,8 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       const chunk = createChunk(draw, size, lockGradient);
       chunk.group.transform({
         translateX: kChunksDrawX + x * size,
-        translateY: imgY + size * 0.25 + kChunkDrawHeight * y});
+        translateY: imgY + size * 0.25 + kChunkDrawHeight * y,
+      });
       chunks.push(chunk);
       chunkStorage.push(new Array(kBins).fill(0));
       if (useImageData) {
@@ -632,13 +591,13 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       }
     }
 
-    setTranslation(createLabel(draw, 'workgroups'), drawingWidth / 2, size * 0.5);
+    setTranslation(createLabel(draw, workGroupsLabel), drawingWidth / 2, size * 0.5);
     const workGroups = [];
     for (let i = 0; i < numWorkgroups; ++i) {
       const workGroup = createWorkgroup(draw, size, lockGradient);
       const fullWidth = kWorkgroupDrawWidth * numWorkgroups + size * (numWorkgroups - 1) * 0.5;
       const x = (kWorkgroupDrawWidth + size * 0.5) * i;
-      workGroup.group.transform({translateX: drawingWidth / 2 - fullWidth / 2 + x, translateY: size * 1.5});
+      workGroup.group.transform({translateX: drawingWidth / 2 - fullWidth / 2 + x, translateY: kWorkgroupY});
       workGroups.push(workGroup);
     }
 
@@ -843,7 +802,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
           const baseChunkNdx = global_invocation_id.x * uniformStride * 2;
           for (let ndx = 0; ndx < numChunks; ++ndx) {
             const chunkNdx = baseChunkNdx + ndx * uniformStride;
-            yield invocation.setInstructions(`total += chunks[${chunkNdx}]`);
+            yield invocation.setInstructions(`sum += chunks[${chunkNdx}][${local_invocation_id.x}]`);
             const { chunkBinPosition, chunkValue } = getChunkInfo(chunkNdx, local_invocation_id.x);
             yield goto(...chunkBinPosition);
             text.text(chunkValue);
@@ -860,7 +819,7 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
 
           {
             text.text(invocation.text.text());
-            yield invocation.setInstructions(`chunks[${baseChunkNdx}][${local_invocation_id.x}] = total`);
+            yield invocation.setInstructions(`chunks[${baseChunkNdx}][${local_invocation_id.x}] = sum`);
             const { chunkBinPosition, chunkBin } = getChunkInfo(baseChunkNdx, local_invocation_id.x);
             yield goto(...chunkBinPosition);
             chunkBin.text.text(invocation.text.text());
@@ -894,6 +853,37 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
             const tx = global_invocation_id.x;
             const ty = global_invocation_id.y;
             yield doOne(tx, ty, true);
+          },
+          lockedBin: function*({global_invocation_id}) {
+            yield invocation.setInstructions('atomicAdd(&histogram[bin], 1)', 0);
+            const texel = kBins[2];
+            const color = unicodeColorsToCSS[texel];
+            invocation.color.fill(color);
+            const binNdx = texelColorToBinNdx[texel];
+            const chunk = chunks[0];
+            const storageBin = chunk.bins[binNdx];
+            switch (global_invocation_id.x) {
+              case 0: {
+                storageBin.lock.show();
+                {
+                  const toInvocation = getTransformToElement(invocation.group.node, storageBin.group.node);
+                  const toColor = getTransformToElement(invocation.group.node, invocation.color.node);
+                  const p2 = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
+                  const p1 = new DOMPoint(size / 4, size / 4).matrixTransform(toColor);
+                  invocation.lockLine
+                    .show()
+                    .plot(p2.x, p2.y, p1.x, p1.y)
+                    .stroke(color)
+                    .css({
+                      opacity: '0.5',
+                    });
+                }
+                break;
+              }
+              case 1:
+                invocation.lockStop.show();
+                break;
+            }
           },
           chunks: function*({global_invocation_id, local_invocation_id}) {
             workgroupStorage[local_invocation_id.x] = 0;
@@ -1064,6 +1054,9 @@ function makeComputeDiagram(diagramDiv, uiDiv, {type}) {
       noRace: function*() {
         dispatchWorkgroups(pixelsAcross, pixelsDown);
       },
+      lockedBin: function*() {
+        dispatchWorkgroups(2, 1);
+      },
       chunks: function*() {
         dispatchWorkgroups(pixelsAcross / kWaveSize, pixelsDown);
       },
@@ -1178,12 +1171,14 @@ renderDiagrams({
    +-----+
   */
   single(elem) {
-    const diagramDiv = el('div');
-    const uiDiv = el('div');
-    const div = el('div', {}, [diagramDiv, uiDiv]);
-    elem.appendChild(div);
-    makeComputeDiagram(diagramDiv, uiDiv, {
+    makeComputeDiagram(elem, {
       type: 'single',
+      numWorkgroups: 1,
+      kWaveSize: 1,
+      hasWorkgroupMem: false,
+      chunksAcross: 1,
+      chunksDown: 1,
+      showImage: true,
     });
   },
   /*
@@ -1197,12 +1192,27 @@ renderDiagrams({
    +-----+
   */
   race(elem) {
-    const diagramDiv = el('div');
-    const uiDiv = el('div');
-    const div = el('div', {}, [diagramDiv, uiDiv]);
-    elem.appendChild(div);
-    makeComputeDiagram(diagramDiv, uiDiv, {
+    makeComputeDiagram(elem, {
       type: 'race',
+      numWorkgroups: 4,
+      kWaveSize: 1,
+      hasWorkgroupMem: false,
+      chunksAcross: 1,
+      chunksDown: 1,
+      showImage: true,
+    });
+  },
+  lockedBin(elem) {
+    makeComputeDiagram(elem, {
+      type: 'lockedBin',
+      numWorkgroups: 2,
+      kWaveSize: 1,
+      hasWorkgroupMem: false,
+      chunksAcross: 1,
+      chunksDown: 1,
+      showImage: false,
+      hideUI: true,
+      workGroupsLabel: '',
     });
   },
   /*
@@ -1216,12 +1226,14 @@ renderDiagrams({
    +-----+
   */
   noRace(elem) {
-    const diagramDiv = el('div');
-    const uiDiv = el('div');
-    const div = el('div', {}, [diagramDiv, uiDiv]);
-    elem.appendChild(div);
-    makeComputeDiagram(diagramDiv, uiDiv, {
+    makeComputeDiagram(elem, {
       type: 'noRace',
+      numWorkgroups: 4,
+      kWaveSize: 1,
+      hasWorkgroupMem: false,
+      chunksAcross: 1,
+      chunksDown: 1,
+      showImage: true,
     });
   },
   /*
@@ -1242,12 +1254,15 @@ renderDiagrams({
    [][][][][][][][][][]
   */
   chunks(elem) {
-    const diagramDiv = el('div');
-    const uiDiv = el('div');
-    const div = el('div', {}, [diagramDiv, uiDiv]);
-    elem.appendChild(div);
-    makeComputeDiagram(diagramDiv, uiDiv, {
+    makeComputeDiagram(elem, {
       type: 'chunks',
+      numWorkgroups: 4,
+      kWaveSize: 3,
+      hasWorkgroupMem: true,
+      chunksAcross: 7,
+      chunksDown: 2,
+      showImage: true,
+      bottomLabel: 'chunks',
     });
   },
   /*
@@ -1256,21 +1271,29 @@ renderDiagrams({
     [][][][][][][][][][]
   */
   sum(elem) {
-    const diagramDiv = el('div');
-    const uiDiv = el('div');
-    const div = el('div', {}, [diagramDiv, uiDiv]);
-    elem.appendChild(div);
-    makeComputeDiagram(diagramDiv, uiDiv, {
+    makeComputeDiagram(elem, {
       type: 'sum',
+      numWorkgroups: 1,
+      hasWorkgroupMem: false,
+      kWaveSize: 3,
+      chunksAcross: 7,
+      chunksDown: 2,
+      showImage: false,
+      useImageData: true,
+      bottomLabel: 'chunks',
     });
   },
   reduce(elem) {
-    const diagramDiv = el('div');
-    const uiDiv = el('div');
-    const div = el('div', {}, [diagramDiv, uiDiv]);
-    elem.appendChild(div);
-    makeComputeDiagram(diagramDiv, uiDiv, {
+    makeComputeDiagram(elem, {
       type: 'reduce',
+      numWorkgroups: 4,
+      kWaveSize: 3,
+      hasWorkgroupMem: false,
+      chunksAcross: 7,
+      chunksDown: 2,
+      showImage: false,
+      useImageData: true,
+      bottomLabel: 'chunks',
     });
   },
 });
