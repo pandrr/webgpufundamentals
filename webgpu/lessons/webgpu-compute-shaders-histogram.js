@@ -456,20 +456,25 @@ function makeComputeDiagram(elem, {
       instructionGroup.transform({translateY: 0});
     }
 
-    function* goToLine(prgCursor, lineNo, duration = 0.5) {
+    function* goToLine(instructionsGroup, prgCursor, lineNo, duration = 0.5) {
       prgCursor.show();
       const sy = prgCursor.transform().translateY;
       const ey = lineNo * 0.4 * size + 1.8;
+      const groupSY = instructionsGroup.transform().translateY;
+      const groupEY = Math.min(0, -(lineNo - (numLinesVisible - 1)) * 0.4 * size);
       yield lerpStep(t => {
         const y = lerp(sy, ey, sineOut(t));
         prgCursor.transform({translateY: y});
+        const groupY = lerp(groupSY, groupEY, sineOut(t));
+        instructionsGroup.transform({translateY: groupY});
       }, duration);
+      yield waitSeconds(0.25);
     }
 
-    function* advanceLine(prgCursor, duration = 0.5) {
+    function* advanceLine(instructionsGroup, prgCursor, duration = 0.5) {
       const sy = prgCursor.transform().translateY;
       const lineNo = Math.round((sy - 1.8) / 0.4 / size);
-      yield goToLine(prgCursor, lineNo + 1, duration);
+      yield goToLine(instructionsGroup, prgCursor, lineNo + 1, duration);
     }
 
     // [-]
@@ -489,11 +494,11 @@ function makeComputeDiagram(elem, {
       const codeGroup = group.group().translate(0, size * 0.5);
       codeGroup.rect(kWidth, size * (0.4 * numLinesVisible + 0.1)).fill('#ccc');
       const maskGroup = codeGroup.group();
-      const prgCursor = maskGroup.rect(kWidth, size * 0.35).transform({
+      const instructionsGroup = maskGroup.group();
+      const prgCursor = instructionsGroup.rect(kWidth, size * 0.35).transform({
         translateX: 0,
         translateY: 1.8,
       }).fill('rgba(200, 0, 255, 0.33)');
-      const instructionsGroup = maskGroup.group();
       instructionsGroup.font({
         family: 'monospace',
         weight: 'bold',
@@ -542,15 +547,16 @@ function makeComputeDiagram(elem, {
         plus,
         idText,
         setInstructions: (text, duration = 0.5) => setInstructions(instructionsGroup, instructions, text, duration),
-        goToLine: (lineNo, duration = 0.5) => goToLine(prgCursor, lineNo, duration),
+        goToLine: (lineNo, duration = 0.5) => goToLine(instructionsGroup, prgCursor, lineNo, duration),
         resetLine: () => {
+          instructionsGroup.transform({translateY: 0});
           prgCursor.transform({translateY: 1.8});
         },
         hideLine: () => {
           prgCursor.hide();
           prgCursor.transform({translateY: 1.8});
         },
-        advanceLine: (duration = 0.5) => advanceLine(prgCursor, duration),
+        advanceLine: (duration = 0.5) => advanceLine(instructionsGroup, prgCursor, duration),
         reset: () => {
           instructions.forEach(i => i.text('-'));
           lock.hide();
@@ -690,6 +696,7 @@ function makeComputeDiagram(elem, {
           yield;
         }
         yield;  // need to wait for all invocations to exit loop
+        yield waitSeconds(0.25);
         --workgroupBarrierCount;
       }
 
@@ -867,10 +874,21 @@ function makeComputeDiagram(elem, {
           yield invocation.setInstructions('-');
         }
 
-        function* reduceImpl({global_invocation_id, local_invocation_id}, numChunks) {
+        function* reduceImpl({global_invocation_id, local_invocation_id}, numChunks, isReduce) {
+          yield invocation.goToLine(0);
           invocation.text.text('0');
+          yield invocation.advanceLine();
+          if (isReduce) {
+            yield invocation.advanceLine();
+            yield invocation.advanceLine();
+            yield invocation.advanceLine();
+          }
           const baseChunkNdx = global_invocation_id.x * uniformStride * 2;
           for (let ndx = 0; ndx < numChunks; ++ndx) {
+            if (!isReduce) {
+              yield invocation.goToLine(2);
+              yield invocation.advanceLine();
+            }
             const chunkNdx = baseChunkNdx + ndx * uniformStride;
             yield invocation.setInstructions(`sum += chunks[${chunkNdx}][${local_invocation_id.x}]`);
             const { chunkBinPosition, chunkValue } = getChunkInfo(chunkNdx, local_invocation_id.x);
@@ -885,10 +903,14 @@ function makeComputeDiagram(elem, {
             const total = parseInt(invocation.text.text());
             invocation.text.text(total + chunkValue);
             yield goUpScaleAndFade(invocation.plus);
+            if (!isReduce) {
+              yield invocation.advanceLine();
+            }
           }
 
           {
             text.text(invocation.text.text());
+            yield invocation.advanceLine();
             yield invocation.setInstructions(`chunks[${baseChunkNdx}][${local_invocation_id.x}] = sum`);
             const { chunkBinPosition, chunkBin } = getChunkInfo(baseChunkNdx, local_invocation_id.x);
             yield goto(...chunkBinPosition);
@@ -960,6 +982,8 @@ function makeComputeDiagram(elem, {
             }
           },
           chunks: function*({global_invocation_id, local_invocation_id}) {
+            yield invocation.goToLine(0);
+            yield invocation.advanceLine();
             workgroupStorage[local_invocation_id.x] = 0;
             workgroup.chunk.bins[local_invocation_id.x].text.text('0');
 
@@ -973,6 +997,7 @@ function makeComputeDiagram(elem, {
 
             const binNdx = texelColorToBinNdx[texel];
             // wait for bin to be free
+            yield invocation.advanceLine();
             yield invocation.setInstructions('atomicAdd(bin[color], 1)');
             invocation.lockStop.show();
             while (workgroupBinLocked[binNdx]) {
@@ -1031,10 +1056,15 @@ function makeComputeDiagram(elem, {
             invocation.color.fill('#888');
             invocation.barrier.show();
             yield invocation.setInstructions('wGroupBarrier');
+            yield invocation.advanceLine();
             yield workgroupBarrier();
             invocation.barrier.hide();
 
+            yield invocation.advanceLine();
+            yield invocation.advanceLine();
+
             // copy bin to chunk
+            yield invocation.advanceLine();
             yield invocation.setInstructions('chunks[bin]=');
             const srcBin = workgroup.chunk.bins[local_invocation_id.x];
             const srcBinPosition = getBinPosition(draw, srcBin, size);
@@ -1059,10 +1089,10 @@ function makeComputeDiagram(elem, {
             yield invocation.setInstructions('-');
           },
           sum: function*(invocationIds) {
-            yield reduceImpl(invocationIds, numChunks);
+            yield reduceImpl(invocationIds, numChunks, false);
           },
           reduce: function*(invocationIds) {
-            yield reduceImpl(invocationIds, 2);
+            yield reduceImpl(invocationIds, 2, true);
           },
         };
 
@@ -1348,11 +1378,13 @@ renderDiagrams({
       bottomLabel: 'chunks',
       numLinesVisible: 3,
       code: `
-        xy = w_id * chunkSize * l_id;
-        color = textureLoad(ourTexture, xy)
+        xy = wid * chunkSize * lid;
+        color = texLoad(ourTexture, xy)
         atomicAdd(&histogram[color], 1)
         wkBarrier();
-        chunk[chunkNdx][bin] = atmcLoad(???)
+        chunk = wid.y * chunksAcross + wid.x;
+        bin = lid.y * chunkWidth + lid.x;
+        chunks[chunk][bin] = atmcLoad(???)
       `,
     });
   },
@@ -1372,6 +1404,14 @@ renderDiagrams({
       showImage: false,
       useImageData: true,
       bottomLabel: 'chunks',
+      code: `
+        sum = 0
+        bin = lid.x;
+        for (chunk = 0; chunk < numChunks; ++chunk) {
+          sum += chunks[chunk][bin]
+        }
+        chunks[0][bin] = sum;
+      `,
     });
   },
   reduce(elem) {
@@ -1385,6 +1425,14 @@ renderDiagrams({
       showImage: false,
       useImageData: true,
       bottomLabel: 'chunks',
+      code: `
+        sum = 0
+        bin = lid.x;
+        ch0 = wid.x * stride / 2;
+        ch0 = ch0 + stride;
+        sum += chunks[ch0][bin] + chunks[ch1][bin];
+        chunks[ch0][bin] = sum;
+      `,
     });
   },
 });

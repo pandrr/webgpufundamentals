@@ -12,7 +12,6 @@
     </style>
   </head>
   <body>
-    <canvas></canvas>
   </body>
   <script type="module">
 import TimingHelper from './resources/js/timing-helper.js';
@@ -35,15 +34,6 @@ async function main() {
   }
 
   const timingHelper = new TimingHelper(device);
-
-  // Get a WebGPU context from the canvas and configure it
-  const canvas = document.querySelector('canvas');
-  const context = canvas.getContext('webgpu');
-  const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({
-    device,
-    format: presentationFormat,
-  });
 
   const module = device.createShaderModule({
     label: 'histogram shader',
@@ -120,21 +110,66 @@ async function main() {
   });
 
   await resultBuffer.mapAsync(GPUMapMode.READ);
-  const result = new Uint32Array(resultBuffer.getMappedRange());
+  const histogram = new Uint32Array(resultBuffer.getMappedRange());
+
+  showImageBitmap(imgBitmap);
+
+  // draw the red, green, and blue channels
+  drawHistogram(histogram, [0, 1, 2]);
+
+  // draw the luminosity channel
+  drawHistogram(histogram, [3]);
 
   const to3 = v => v.toString().padStart(3);
 
   const sum = [0, 0, 0, 0];
   for (let i = 0; i < 256; ++i) {
     const off = i * 4;
-    console.log(to3(i), to3(result[off]), to3(result[off + 1]), to3(result[off + 2]), to3(result[off + 3]));
+    console.log(to3(i), to3(histogram[off]), to3(histogram[off + 1]), to3(histogram[off + 2]), to3(histogram[off + 3]));
     for (let j = 0; j < 4; ++j) {
-      sum[j] += result[off + j];
+      sum[j] += histogram[off + j];
     }
   }
   console.log('sum:', sum);
 }
 
+function drawHistogram(histogram, channels, height = 100) {
+  // find the highest value for each channel
+  const max = [0, 0, 0, 0];
+  const total = [0, 0, 0, 0];
+  histogram.forEach((v, i) => {
+    const ch = i % 4;
+    max[ch] = Math.max(max[ch], v);
+    total[ch] += v;
+  });
+  console.log('total:', total);
+
+  const numBins = histogram.length / 4;
+  const canvas = document.createElement('canvas');
+  canvas.width = numBins;
+  canvas.height = height;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+
+  const colors = [
+    'rgb(255, 0, 0)',
+    'rgb(0, 255, 0)',
+    'rgb(0, 0, 255)',
+    'rgb(255, 255, 255)',
+  ];
+
+  ctx.globalCompositeOperation = 'screen';
+
+  for (let x = 0; x < numBins; ++x) {
+    const offset = x * 4;
+    for (const ch of channels) {
+      const scale = 0.2 * numBins / total[ch];
+      const v = histogram[offset + ch] * scale * height;
+      ctx.fillStyle = colors[ch];
+      ctx.fillRect(x, height - v, 1, v);
+    }
+  }
+}
 
 function showImageBitmap(imageBitmap) {
   const canvas = document.createElement('canvas');

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>WebGPU Compute Shaders - Histogram, slow</title>
+    <title>WebGPU Compute Shaders - Histogram</title>
     <style>
       @import url(resources/webgpu-lesson.css);
       canvas {
@@ -38,30 +38,23 @@ async function main() {
   const module = device.createShaderModule({
     label: 'histogram shader',
     code: `
-      @group(0) @binding(0) var<storage, read_write> histogram: array<vec4u>;
+      @group(0) @binding(0) var<storage, read_write> histogram: array<array<atomic<u32>, 4>>;
       @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
-      // from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
       const kSRGBLuminanceFactors = vec3f(0.2126, 0.7152, 0.0722);
       fn srgbLuminance(color: vec3f) -> f32 {
         return saturate(dot(color, kSRGBLuminanceFactors));
       }
 
-      @compute @workgroup_size(1, 1, 1) fn cs() {
-        let size = textureDimensions(ourTexture, 0);
+      @compute @workgroup_size(16, 16, 1) fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
+        let position = global_invocation_id.xy;
         let numBins = f32(arrayLength(&histogram));
         let lastBinIndex = u32(numBins - 1);
-        for (var y = 0u; y < size.y; y++) {
-          for (var x = 0u; x < size.x; x++) {
-            let position = vec2u(x, y);
-            let color = textureLoad(ourTexture, position, 0);
-            let luminance = srgbLuminance(color.rgb);
-            for (var ch = 0; ch < 4; ch++) {
-              let v = select(color[ch], luminance, ch == 3);
-              let bin = min(u32(v * numBins), lastBinIndex);
-              histogram[bin][ch] += 1;
-            }
-          }
+        var channels = textureLoad(ourTexture, position, 0);
+        channels.w = srgbLuminance(channels.rgb);
+        for (var ch = 0; ch < 4; ch++) {
+          let ndx = min(u32(channels[ch] * numBins), lastBinIndex);
+          atomicAdd(&histogram[ndx][ch], 1u);
         }
       }
     `,
@@ -90,7 +83,6 @@ async function main() {
   });
 
   const bindGroup = device.createBindGroup({
-    label: 'histogram bindGroup',
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: { buffer: histogramBuffer }},
@@ -98,21 +90,15 @@ async function main() {
     ],
   });
 
-  const histogramInfoBuffer = device.createBuffer({
-    size: 32, // vec4f * 2
-    usage: GPUBufferUsage.STORAGE,
-  });
-
   const encoder = device.createCommandEncoder({
     label: 'histogram encoder',
   });
-  {
-    const pass = timingHelper.beginComputePass(encoder);
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.dispatchWorkgroups(1);
-    pass.end();
-  }
+
+  const pass = timingHelper.beginComputePass(encoder);
+  pass.setPipeline(pipeline);
+  pass.setBindGroup(0, bindGroup);
+  pass.dispatchWorkgroups(Math.ceil(texture.width / 16), Math.ceil(texture.height / 16));
+  pass.end();
 
   encoder.copyBufferToBuffer(histogramBuffer, 0, resultBuffer, 0, resultBuffer.size);
 
@@ -133,6 +119,18 @@ async function main() {
 
   // draw the luminosity channel
   drawHistogram(histogram, [3]);
+
+  const to3 = v => v.toString().padStart(3);
+
+  const sum = [0, 0, 0, 0];
+  for (let i = 0; i < 256; ++i) {
+    const off = i * 4;
+    console.log(to3(i), to3(histogram[off]), to3(histogram[off + 1]), to3(histogram[off + 2]), to3(histogram[off + 3]));
+    for (let j = 0; j < 4; ++j) {
+      sum[j] += histogram[off + j];
+    }
+  }
+  console.log('sum:', sum);
 }
 
 function drawHistogram(histogram, channels, height = 100) {

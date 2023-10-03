@@ -576,10 +576,11 @@ And it should work
 Timing the results I found **this is about 6x slower than the JavaScript version!!!** 😱
 
 What's up with that? We designed our solution above with a single loop and used
-a single workgroup invocation with a size of 1. That means just a single core of
+a single workgroup invocation with a size of 1. That means just a single "core" of
 the GPU was used to compute the histogram. GPU cores are generally, not as fast
-as CPU cores. GPUs get their speed from massive parallelization but given our
-design above we got none.
+as CPU cores. CPU cores have tons of extra circuitry to try to speed them up.
+GPUs get their speed from massive parallelization but need to keep their design simpler.
+Given our design above we didn't take advantage of any parallelization.
 
 Here's a diagram of what's happening using our small example texture.
 
@@ -598,7 +599,8 @@ Here's a diagram of what's happening using our small example texture.
 >   * `wid` = `workgroup_id`
 >   * `lid` = `local_invocation_id`
 >   * `ourTex` = `ourTexture`
->   * `texSample` = `textureSample`
+>   * `texLoad` = `textureLoad`
+>   * etc...
 >
 > Many of these changes are because there is only so much room to try
 > to display many details. While this first example uses a single
@@ -612,7 +614,7 @@ parallelize our approach.
 ## Optimize - More Invocations
 
 Possibly the easiest and most obvious way to speed this up use to use one
-invocation per pixel. In our code above we have for loop
+workgroup per pixel. In our code above we have for loop
 
 ```js
 for (y) {
@@ -867,10 +869,12 @@ reduce
 
 # M1
 
-* JavaScript: 166ms ???
-* Compute Shader: 1 workgroup 1x1x1 : 5988ms
-* Compute Shader: 1 workgroup per pixel : 34ms
-* 
+* JavaScript: 43ms ???
+* Compute Shader: 1 workgroup 1x1x1 : 1500ms
+* Compute Shader: 1 workgroup per pixel : 12ms
+* 256x1 + sum = 12.5ms
+* 256x1 + reduce = 1em
+
 
 
 * Cleanup drawHistogram (we don't need totals or max?)
