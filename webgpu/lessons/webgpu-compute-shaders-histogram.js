@@ -410,13 +410,14 @@ function makeComputeDiagram(elem, {
     const kChunksDrawWidth = chunksAcross * size;
     const kChunkDrawHeight = size * 3.5;
     const imgPlusChunksDrawWidth = imageWidth + kChunksDrawWidth + (chunksAcross - 1) * size * 0 + size * 2.5;
-    const kInvocationWidth = numWorkgroups > 2 ? 2 : 7;
-    const kInvocationHeight = 1.25 + (numLinesVisible * 0.4 + 0.1);
+    const kInvocationWidth = numWorkgroups > 2 ? 4 : 7;
+    const kInvocationHeight = 1.25 + (numLinesVisible * 0.4 + 0.6);
     const kInvocationDrawWidth = size * (kInvocationWidth + (hasWorkgroupMem ? 0 : 1.5));
+    const kInvocationDrawHeight = size * kInvocationHeight;
     const kWorkgroupY = size * 1.5;
     const kWorkgroupDrawWidth = kInvocationDrawWidth + size * (hasWorkgroupMem ? 2 : 0.5);
     const kWorkgroupDrawHeight = size * (kWaveSize * kInvocationHeight + 0.25);
-    const drawingWidth = imageWidthH + size * 12;
+    const drawingWidth = imageWidthH + size * 20;
     const drawingHeight = showImage
         ? imageHeight + size * 3 + kWorkgroupDrawHeight
         : kWorkgroupDrawHeight + size * 3 + chunksDown * kChunkDrawHeight + (chunksDown - 1) * size * 0.25;
@@ -475,11 +476,19 @@ function makeComputeDiagram(elem, {
     // [-]
     // [-]
     function createInvocation(draw, size, id) {
-      const group = draw.group();
+      const group = draw.group().font({
+        family: 'monospace',
+        weight: 'bold',
+        size: '6',
+      });
       const kWidth = kInvocationDrawWidth;
-      group.rect(kWidth, size * (1 + 0.4 * numLinesVisible + 0.1)).fill('#444').stroke('#000');
-      group.rect(kWidth, size * (0.4 * numLinesVisible + 0.1)).fill('#ccc');
-      const maskGroup = group.group();
+      group.rect(kWidth, size * (1 + 0.4 * numLinesVisible + 0.6)).fill('#444').stroke('#000');
+      group.rect(kWidth, size * 0.5).fill('#888');
+      const header = group.rect(kWidth, size * 0.5).fill('#888').hide();
+      const idText = group.text('').translate(2, size * 0.35);
+      const codeGroup = group.group().translate(0, size * 0.5);
+      codeGroup.rect(kWidth, size * (0.4 * numLinesVisible + 0.1)).fill('#ccc');
+      const maskGroup = codeGroup.group();
       const prgCursor = maskGroup.rect(kWidth, size * 0.35).transform({
         translateX: 0,
         translateY: 1.8,
@@ -491,9 +500,9 @@ function makeComputeDiagram(elem, {
         size: '6',
       });
       const instructions = range(numCodeLines, i => instructionsGroup.text(lines[i] || '').move(2, 1.8 + i * size * 0.4).css({'white-space': 'pre'}));
-      const mask = group.rect(kWidth, size * (0.4 * numLinesVisible + 0.1)).fill('#fff');
+      const mask = codeGroup.rect(kWidth, size * (0.4 * numLinesVisible + 0.1)).fill('#fff');
       maskGroup.maskWith(mask);
-      const belowCodeLinesY = numLinesVisible * size * 0.4;
+      const belowCodeLinesY = numLinesVisible * size * 0.4 + size * 0.5;
 
       const color = group.group().transform({translate: [kWidth / 2 + size / 4, belowCodeLinesY + size * 0.375]}).rect(size / 2, size / 2).fill('#888').stroke({color: '#000', width: 0.5});
       const text = makeText(group, '0').font({anchor: 'middle', size: '8'});
@@ -525,11 +534,13 @@ function makeComputeDiagram(elem, {
         color,
         text,
         fetchHandle,
+        header,
         lock,
         lockLine,
         lockStop,
         barrier,
         plus,
+        idText,
         setInstructions: (text, duration = 0.5) => setInstructions(instructionsGroup, instructions, text, duration),
         goToLine: (lineNo, duration = 0.5) => goToLine(prgCursor, lineNo, duration),
         resetLine: () => {
@@ -562,7 +573,7 @@ function makeComputeDiagram(elem, {
       const invocations = [];
       for (let i = 0; i < kWaveSize; ++i) {
         const invocation = createInvocation(group, size, i);
-        invocation.group.transform({translateX: size * 0.25, translateY: i * size * (1.25 + 0.1 + numLinesVisible * 0.4)});
+        invocation.group.transform({translateX: size * 0.25, translateY: i * kInvocationDrawHeight});
         invocations.push(invocation);
       }
       const workgroup = {
@@ -754,6 +765,14 @@ function makeComputeDiagram(elem, {
             group.fill(rgba(255, 255, 255, 1 - t)).transform({scale: 1 + t}); //, translateY: translateY - t * size / 2});
           });
           group.transform({translateY});
+          group.hide();
+        }
+
+        function* fadeOut(group, duration = 0.5) {
+          group.show();
+          yield lerpStep(t => {
+            group.fill(rgba(255, 255, 0, 1 - t));
+          }, duration);
           group.hide();
         }
 
@@ -1056,6 +1075,8 @@ function makeComputeDiagram(elem, {
             ++activeInvocationCount;
             const { global_invocation_id, local_invocation_id } = workForCores.shift();
             invocation.resetLine();
+            invocation.idText.text(`wid(${global_invocation_id.x},${global_invocation_id.y},0) lid(${local_invocation_id.x},${local_invocation_id.y || 0},0)`);
+            yield fadeOut(invocation.header);
             yield shaders[type]({global_invocation_id, local_invocation_id});
             --activeInvocationCount;
           }
@@ -1138,28 +1159,12 @@ function makeComputeDiagram(elem, {
     // of how the GPU actually runs.
     const runner = coMgr.createRunner();
     runner.add(function* dispatcher() {
-  //      const waves = [...workGroups];
-
       // make list of workgroup to dispatch
       yield dispatchers[type]();
 
       for (;;) {
         yield;
       }
-      /*
-      while (workForWorkgroups.length) {
-        // wait for a workgroup
-        while (waves.length === 0) {
-          yield;
-        }
-
-        const wave = waves.shift();
-        const work = work.shift();
-
-        if ()
-      }
-      */
-
     }());
 
     let closed = false;
@@ -1282,6 +1287,7 @@ renderDiagrams({
       showImage: false,
       hideUI: true,
       workGroupsLabel: '',
+      bottomLabel: '',
       code: `
         atomicAdd(&histogram[color], 1)
       `,
@@ -1307,8 +1313,8 @@ renderDiagrams({
       chunksDown: 1,
       showImage: true,
       code: `
-        xy = glbl_inv_id
-        color = textureLoad(ourTexture, xy)
+        xy = gid.xy;
+        color = texLoad(ourTex, xy)
         atomicAdd(&histogram[color], 1)
       `,
     });

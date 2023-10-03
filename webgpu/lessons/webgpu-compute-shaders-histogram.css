@@ -29,6 +29,11 @@
     padding-top: 2em;
     padding-bottom: 2em;
 }
+.compute-diagram [data-diagram] {
+  display: inline-block;
+  max-width: 100%;
+  width: 900px;
+}
 .histogram-img {
   background-color: #777;
 }

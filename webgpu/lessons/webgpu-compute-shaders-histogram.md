@@ -8,7 +8,7 @@ This is going to be a long 2 part article and unfortunately we're going to take 
 things. This optimization will make things faster but the output will not change so each step
 will look the same as the previous step. Further, we're going to
 mention speed and timing but the articles and examples would get
-even longer if we added the code to do the timing so we'll live
+even longer if we added the code to do the timing so we'll leave
 timing to [another article](webgpu-timing.html) and in these articles
 I'll just mention my own timing and provide some run-able examples.
 Hopefully this article will provide a good example of making
@@ -581,11 +581,30 @@ the GPU was used to compute the histogram. GPU cores are generally, not as fast
 as CPU cores. GPUs get their speed from massive parallelization but given our
 design above we got none.
 
-Here's a diagram of what's happening using are small example image.
+Here's a diagram of what's happening using our small example texture.
 
 <div class="webgpu_center compute-diagram">
-  <div data-diagram="single" style="display: inline-block; max-width: 100%; width: 700px;"></div>
+  <div data-diagram="single"></div>
 </div>
+
+> ## Diagram vs Shader Differences
+>
+> These diagrams are not a perfect representation of our shaders
+>
+> * They show only 3 bins where as our shader has 256 bins
+> * They show a single channel where as our shader has 4 channels
+> * The code is simplified.
+> * Many things are abbreviated.
+>   * `wid` = `workgroup_id`
+>   * `lid` = `local_invocation_id`
+>   * `ourTex` = `ourTexture`
+>   * `texSample` = `textureSample`
+>
+> Many of these changes are because there is only so much room to try
+> to display many details. While this first example uses a single
+> invocation, as we progress we'll need to cram more info in less space.
+> I hope the diagrams aid in understanding rather than make things more
+> confusing. 😅
 
 Given a single GPU invocation is slower than a CPU we need to find a way to
 parallelize our approach.
@@ -759,7 +778,7 @@ You can see the problem visually in the diagram below. You'll see several invoca
 go and fetch the current value in the bin, add one to it, and put it back, each of
 oblivious that another invocation is reading and updating the same bin at the same time.
 
-<div class="webgpu_center compute-diagram"><div data-diagram="race" style="display: inline-block; width: 700px;"></div></div>
+<div class="webgpu_center compute-diagram"><div data-diagram="race"></div></div>
 
 WGSL has special "atomic" instructions to solve this issue. This case we
 can use `atomicAdd`. `atomicAdd` makes the addition "atomic" which
@@ -810,7 +829,7 @@ so that another invocation has to wait until it's done.
 
 <div class="webgpu_center compute-diagram">
   <div>Two workgroups, one locking the blue bin, the other blocked from using the same blue bin</div>
-  <div data-diagram="lockedBin" style="display: inline-block; max-width: 100%; width: 700px;"></div>
+  <div data-diagram="lockedBin"></div>
 </div>
 
 When
@@ -818,7 +837,7 @@ an invocation is locking a bin it will have a line from the invocation
 to the bin in the color of the bin. Invocations that are waiting for
 that bin to unlock will have a stop sign on them.
 
-<div class="webgpu_center compute-diagram"><div data-diagram="noRace" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
+<div class="webgpu_center compute-diagram"><div data-diagram="noRace"></div></div>
 
 ## Workgroups
 
@@ -835,13 +854,13 @@ each invocation work on at 256x1 section of the image. This will make it
 
 
 chunks
-<div class="webgpu_center compute-diagram"><div data-diagram="chunks" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
+<div class="webgpu_center compute-diagram"><div data-diagram="chunks"></div></div>
 
 sum
-<div class="webgpu_center compute-diagram"><div data-diagram="sum" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
+<div class="webgpu_center compute-diagram"><div data-diagram="sum"></div></div>
 
 reduce
-<div class="webgpu_center compute-diagram"><div data-diagram="reduce" style="display: inline-block; max-width: 100%; width: 700px;"></div></div>
+<div class="webgpu_center compute-diagram"><div data-diagram="reduce"></div></div>
 
 
 # Drawing a histogram
