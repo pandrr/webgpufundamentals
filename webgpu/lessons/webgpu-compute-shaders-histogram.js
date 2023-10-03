@@ -335,6 +335,8 @@ function makeComputeDiagram(elem, {
   hideUI,
   workGroupsLabel = 'workgroups',
   bottomLabel = 'bins',
+  numLinesVisible,
+  code = '',
 }) {
   const diagramDiv = el('div');
   const uiDiv = el('div');
@@ -347,6 +349,15 @@ function makeComputeDiagram(elem, {
   let playing = true;
 
   const speeds = [0.25, 0.5, 1, 2, 4];
+
+  const lines = (() => {
+    const leadRE = /^ */;
+    const lines = code.split('\n').filter(v => v.trim().length > 0);
+    const shortestPadding = lines.reduce((min, line) => Math.min(min, leadRE.exec(line)[0].length), Number.MAX_SAFE_INTEGER);
+    return lines.map(line => line.substring(shortestPadding));
+  })();
+  const numCodeLines = Math.max(1, lines.length);
+  numLinesVisible = numLinesVisible || numCodeLines;
 
   let diagram = createComputeDiagram();
 
@@ -399,8 +410,8 @@ function makeComputeDiagram(elem, {
     const kChunksDrawWidth = chunksAcross * size;
     const kChunkDrawHeight = size * 3.5;
     const imgPlusChunksDrawWidth = imageWidth + kChunksDrawWidth + (chunksAcross - 1) * size * 0 + size * 2.5;
-    const kInvocationWidth = numWorkgroups > 2 ? 2 : 4;
-    const kInvocationHeight = 1.75;
+    const kInvocationWidth = numWorkgroups > 2 ? 2 : 7;
+    const kInvocationHeight = 1.25 + (numLinesVisible * 0.4 + 0.1);
     const kInvocationDrawWidth = size * (kInvocationWidth + (hasWorkgroupMem ? 0 : 1.5));
     const kWorkgroupY = size * 1.5;
     const kWorkgroupDrawWidth = kInvocationDrawWidth + size * (hasWorkgroupMem ? 2 : 0.5);
@@ -444,36 +455,57 @@ function makeComputeDiagram(elem, {
       instructionGroup.transform({translateY: 0});
     }
 
+    function* goToLine(prgCursor, lineNo, duration = 0.5) {
+      prgCursor.show();
+      const sy = prgCursor.transform().translateY;
+      const ey = lineNo * 0.4 * size + 1.8;
+      yield lerpStep(t => {
+        const y = lerp(sy, ey, sineOut(t));
+        prgCursor.transform({translateY: y});
+      }, duration);
+    }
+
+    function* advanceLine(prgCursor, duration = 0.5) {
+      const sy = prgCursor.transform().translateY;
+      const lineNo = Math.round((sy - 1.8) / 0.4 / size);
+      yield goToLine(prgCursor, lineNo + 1, duration);
+    }
+
     // [-]
     // [-]
     // [-]
     function createInvocation(draw, size, id) {
       const group = draw.group();
       const kWidth = kInvocationDrawWidth;
-      group.rect(kWidth, size * 1.5).fill('#444').stroke('#000');
-      group.rect(kWidth, size * 0.5).fill('#ccc');
+      group.rect(kWidth, size * (1 + 0.4 * numLinesVisible + 0.1)).fill('#444').stroke('#000');
+      group.rect(kWidth, size * (0.4 * numLinesVisible + 0.1)).fill('#ccc');
       const maskGroup = group.group();
+      const prgCursor = maskGroup.rect(kWidth, size * 0.35).transform({
+        translateX: 0,
+        translateY: 1.8,
+      }).fill('rgba(200, 0, 255, 0.33)');
       const instructionsGroup = maskGroup.group();
       instructionsGroup.font({
         family: 'monospace',
         weight: 'bold',
         size: '6',
       });
-      const instructions = range(2, i => instructionsGroup.text('-').move(2, 1.8 + i * 8));
-      const mask = group.rect(kWidth, size * 0.5).fill('#fff');
+      const instructions = range(numCodeLines, i => instructionsGroup.text(lines[i] || '').move(2, 1.8 + i * size * 0.4).css({'white-space': 'pre'}));
+      const mask = group.rect(kWidth, size * (0.4 * numLinesVisible + 0.1)).fill('#fff');
       maskGroup.maskWith(mask);
+      const belowCodeLinesY = numLinesVisible * size * 0.4;
 
-      const color = group.group().transform({translate: [kWidth / 2 + size / 4, size * 1.5 / 2]}).rect(size / 2, size / 2).fill('#888').stroke({color: '#000', width: 0.5});
+      const color = group.group().transform({translate: [kWidth / 2 + size / 4, belowCodeLinesY + size * 0.375]}).rect(size / 2, size / 2).fill('#888').stroke({color: '#000', width: 0.5});
       const text = makeText(group, '0').font({anchor: 'middle', size: '8'});
       //group.text(id).font({
       //  family: 'monospace',
       //  weight: 'bold',
       //  size: '8',
       //}).move(0, -2).fill('rgba(0, 0, 0, 0.5)');
-      setTranslation(text, kWidth / 2 - size * 0.5, size * (1.25 - 0.1));
+      setTranslation(text, kWidth / 2 - size * 0.5, belowCodeLinesY + size * (0.75));
       const lock = group
           .polygon([[0, 0], [1, 0], [1, 1], [0, 1]])
-          .move(size, size * 0.5)
+          .move(size, belowCodeLinesY + size * 0.25)
           .fill(hsl(1 / 12 + id * 0.1, 0.7, lerp(0.4, 0.8, id / 2)))
           .stroke({width: 0.5})
           .hide();
@@ -481,22 +513,33 @@ function makeComputeDiagram(elem, {
           .line(0, 0, 1, 1)
           .stroke({color: 'red', width: size / 4})
           .hide();
-      const lockStop = group.image('/webgpu/lessons/resources/stop.svg').size(size, size).move((kWidth - size) / 2, size * 0.5).hide();
-      const barrier = group.image('/webgpu/lessons/resources/barrier.svg').size(size, size).move((kWidth - size) / 2, size * 0.5).hide();
+      const lockStop = group.image('/webgpu/lessons/resources/stop.svg').size(size, size).move((kWidth - size) / 2, belowCodeLinesY + size * 0.125).hide();
+      const barrier = group.image('/webgpu/lessons/resources/barrier.svg').size(size, size).move((kWidth - size) / 2, belowCodeLinesY + size * 0.125).hide();
+      const fetchHandle = group.group().transform({translateX: kWidth / 2, translateY: belowCodeLinesY + size * 0.75});
       const plus = group.group();
-      plus.rect(size / 4, size / 2).center(kWidth / 2 - size / 2, size);
-      plus.rect(size / 2, size / 4).center(kWidth / 2 - size / 2, size);
+      plus.rect(size / 6, size / 2).center(kWidth / 2 - size / 2, belowCodeLinesY + size * 0.625);
+      plus.rect(size / 2, size / 6).center(kWidth / 2 - size / 2, belowCodeLinesY + size * 0.625);
       plus.hide();
       return {
         group,
         color,
         text,
+        fetchHandle,
         lock,
         lockLine,
         lockStop,
         barrier,
         plus,
         setInstructions: (text, duration = 0.5) => setInstructions(instructionsGroup, instructions, text, duration),
+        goToLine: (lineNo, duration = 0.5) => goToLine(prgCursor, lineNo, duration),
+        resetLine: () => {
+          prgCursor.transform({translateY: 1.8});
+        },
+        hideLine: () => {
+          prgCursor.hide();
+          prgCursor.transform({translateY: 1.8});
+        },
+        advanceLine: (duration = 0.5) => advanceLine(prgCursor, duration),
         reset: () => {
           instructions.forEach(i => i.text('-'));
           lock.hide();
@@ -510,7 +553,7 @@ function makeComputeDiagram(elem, {
 
     function* setInstructions(instructionGroup, instructions, text, duration) {
       coMgr.addStep();
-      yield scrollText(instructionGroup, instructions, text, duration);
+      //yield scrollText(instructionGroup, instructions, text, duration);
     }
 
     function createWorkgroup(draw, size, lockColor) {
@@ -519,7 +562,7 @@ function makeComputeDiagram(elem, {
       const invocations = [];
       for (let i = 0; i < kWaveSize; ++i) {
         const invocation = createInvocation(group, size, i);
-        invocation.group.transform({translateX: size * 0.25, translateY: i * size * 1.75});
+        invocation.group.transform({translateX: size * 0.25, translateY: i * size * (1.25 + 0.1 + numLinesVisible * 0.4)});
         invocations.push(invocation);
       }
       const workgroup = {
@@ -528,7 +571,7 @@ function makeComputeDiagram(elem, {
       };
       if (hasWorkgroupMem) {
         const chunk = createChunk(group, size, lockColor);
-        chunk.group.transform({translate: [size * (kInvocationWidth + 0.75), size * 1]});
+        chunk.group.transform({translate: [size * (kInvocationWidth + 0.75), kWorkgroupDrawHeight / 2 - kChunkDrawHeight / 2]});
         workgroup.chunk = chunk;
       }
       return workgroup;
@@ -548,11 +591,11 @@ function makeComputeDiagram(elem, {
         });
     }
 
-    const draw = svg().addTo(diagramDiv).viewbox(0, 0, drawingWidth, drawingHeight);
+    const draw = svg().addTo(diagramDiv).viewbox(0, 0, drawingWidth, drawingHeight).css({whiteSpace: 'pre'});
 
-    const oMarker = draw.marker(size + 2, size + 2, function(add) {
-      add.circle(size).fill('none').stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)').attr({orient: 'auto'});
-    });
+    //const oMarker = draw.marker(size + 2, size + 2, function(add) {
+    //  add.circle(size).fill('none').stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)').attr({orient: 'auto'});
+    //});
 
     const lockGradient = draw.gradient('linear', function(add) {
       add.stop(0, '#fd0');
@@ -640,10 +683,10 @@ function makeComputeDiagram(elem, {
       }
 
       workgroup.invocations.map((invocation, id) => {
-        const toInvocation = getTransformToElement(draw.node, invocation.group.node);
+        const toInvocation = getTransformToElement(draw.node, invocation.fetchHandle.node);
         const toColor = getTransformToElement(draw.node, invocation.color.node);
         const toText = getTransformToElement(draw.node, invocation.text.node);
-        const invPoint = new DOMPoint(kInvocationDrawWidth / 2, size).matrixTransform(toInvocation);
+        const invPoint = new DOMPoint(0, 0).matrixTransform(toInvocation);
         // why doesn't this work?
         const colorPoint = new DOMPoint(size / 4, size / 4).matrixTransform(toColor);
         const numPoint = new DOMPoint(0, 0).matrixTransform(toText);
@@ -658,30 +701,32 @@ function makeComputeDiagram(elem, {
         let ex = sx;
         let ey = sy;
 
-        let markerCircle;
-        const oMarker = draw.marker(size + 2, size + 2, function(add) {
-          markerCircle = add.circle(size).fill('none').stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)').attr({orient: 'auto'});
-        });
+        //let markerCircle;
+        //const oMarker = draw.marker(size + 2, size + 2, function(add) {
+        //  markerCircle = add.circle(size).fill('none').stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.25)').attr({orient: 'auto'});
+        //});
 
         const line = ig.line(sx, sy, ex, ey)
           .stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.5)')
-          .marker('end', oMarker)
+        //  .marker('end', oMarker)
           .hide();
         line.node.style.mixBlendMode = 'difference';
-        const rect = ig.rect(10, 10).center(0, 0).fill('none').stroke({color: '#000', width: 0.5}).hide();
-        const text = makeText(ig, '').font({anchor: 'middle'});
+        const targetGroup = ig.group();
+        const rect = targetGroup.rect(10, 10).center(0, 0).fill('#ff0').stroke({color: '#000', width: 0.5}).hide();
+        const text = makeText(targetGroup, '').font({anchor: 'middle'});
+        const circle = targetGroup.circle(size).center(0, 0).fill('none').stroke(/*colorScheme.main*/'rgba(255, 255, 255, 0.5)').hide();
+        circle.node.style.mixBlendMode = 'difference';
         text.attr({cx: 0, cy: 0, 'dominant-baseline': 'central'});
-        text.transform({translate: colorPoint});
+        targetGroup.transform({translate: colorPoint});
 
         function* goto(targetX, targetY, duration = 1) {
           line.show();
-          markerCircle.show();
+          circle.show();
           yield lerpStep(t => {
             const x = lerp(ex, targetX, t);
             const y = lerp(ey, targetY, t);
             line.plot(sx, sy, x, y);
-            rect.transform({translate: [x, y]});
-            text.transform({translate: [x, y]});
+            targetGroup.transform({translate: [x, y]});
           }, duration);
           yield waitSeconds(0.25);
           ex = targetX;
@@ -694,18 +739,21 @@ function makeComputeDiagram(elem, {
           yield lerpStep(t => {
             const color = rgba(255, 255, 255, (1 - t) * 0.25);
             line.stroke(color);
-            markerCircle.stroke(color);
+            circle.stroke(color);
           }, 0.5);
           line.hide();
+          circle.hide();
           line.stroke(rgba(255, 255, 255, 0.25));
-          markerCircle.stroke(rgba(255, 255, 255, 0.25));
+          circle.stroke(rgba(255, 255, 255, 0.25));
         }
 
-        function* scaleAndFade(group) {
+        function* goUpScaleAndFade(group) {
           group.show();
+          const translateY = group.transform().translateY;
           yield lerpStep(t => {
-            group.fill(rgba(255, 255, 255, 1 - t)).transform({scale: 1 + t});
+            group.fill(rgba(255, 255, 255, 1 - t)).transform({scale: 1 + t}); //, translateY: translateY - t * size / 2});
           });
+          group.transform({translateY});
           group.hide();
         }
 
@@ -724,6 +772,7 @@ function makeComputeDiagram(elem, {
           // read texture
           const texel = image[ty][tx];
           const color = unicodeColorsToCSS[texel];
+          yield invocation.advanceLine();
           yield textureLoad(tx, ty, texel);
           const binNdx = texelColorToBinNdx[texel];
           const chunk = chunks[0];
@@ -731,9 +780,10 @@ function makeComputeDiagram(elem, {
 
           if (useBarrier) {
             line.hide();
-            markerCircle.hide();
+            circle.hide();
 
             // wait for bin to be free
+            yield invocation.advanceLine();
             yield invocation.setInstructions('atomicAdd(&bin[color], 1)');
             invocation.lockStop.show();
             while (storageBinLocked[binNdx]) {
@@ -758,6 +808,7 @@ function makeComputeDiagram(elem, {
                 });
             }
           } else {
+            yield invocation.advanceLine();
             yield invocation.setInstructions('bin[color] += 1');
           }
 
@@ -775,14 +826,13 @@ function makeComputeDiagram(elem, {
 
           // inc
           invocation.text.text(parseInt(invocation.text.text()) + 1);
-          yield scaleAndFade(invocation.plus);
+          yield goUpScaleAndFade(invocation.plus);
 
           // put in bin
           text.text(invocation.text.text());
           yield goto(...chunkBinPosition);
           chunkBin.text.text(text.text());
           text.text('');
-          yield;
 
           if (useBarrier) {
             storageBinLocked[binNdx] = false;
@@ -794,6 +844,7 @@ function makeComputeDiagram(elem, {
           yield fadeLine();
           invocation.color.fill('#888');
           invocation.text.text('');
+          yield invocation.advanceLine();
           yield invocation.setInstructions('-');
         }
 
@@ -810,11 +861,11 @@ function makeComputeDiagram(elem, {
             yield goto(numX, numY);
             text.text('');
             line.hide();
-            markerCircle.hide();
+            circle.hide();
 
             const total = parseInt(invocation.text.text());
             invocation.text.text(total + chunkValue);
-            yield scaleAndFade(invocation.plus);
+            yield goUpScaleAndFade(invocation.plus);
           }
 
           {
@@ -839,15 +890,19 @@ function makeComputeDiagram(elem, {
         const shaders = {
           single: function*() {
             for (let ty = 0; ty < pixelsDown; ++ty) {
+              yield invocation.goToLine(0);
               for (let tx = 0; tx < pixelsAcross; ++tx) {
-                yield doOne(tx, ty, false);
+                yield invocation.goToLine(1);
+                yield doOne(tx, ty, false, 2);
               }
             }
           },
           race: function*({global_invocation_id}) {
+            yield invocation.goToLine(0);
             const tx = global_invocation_id.x;
             const ty = global_invocation_id.y;
             yield doOne(tx, ty, false);
+            invocation.hideLine();
           },
           noRace: function*({global_invocation_id}) {
             const tx = global_invocation_id.x;
@@ -938,7 +993,7 @@ function makeComputeDiagram(elem, {
             // inc
             invocation.text.text(value + 1);
             text.text('');
-            yield scaleAndFade(invocation.plus);
+            yield goUpScaleAndFade(invocation.plus);
             text.text(value + 1);
             yield goto(...binPosition);
             workgroupStorage[binNdx] = value + 1;
@@ -1000,6 +1055,7 @@ function makeComputeDiagram(elem, {
             }
             ++activeInvocationCount;
             const { global_invocation_id, local_invocation_id } = workForCores.shift();
+            invocation.resetLine();
             yield shaders[type]({global_invocation_id, local_invocation_id});
             --activeInvocationCount;
           }
@@ -1179,6 +1235,14 @@ renderDiagrams({
       chunksAcross: 1,
       chunksDown: 1,
       showImage: true,
+      code: `
+        for (y = 0; y < size.y; y++) {
+          for (x = 0; x < size.x; x++) {
+            color = textureLoad(ourTexture, vec2(x,y))
+            histogram[color] += 1
+          }
+        }
+      `,
     });
   },
   /*
@@ -1200,6 +1264,11 @@ renderDiagrams({
       chunksAcross: 1,
       chunksDown: 1,
       showImage: true,
+      code: `
+        xy = glbl_inv_id
+        color = textureLoad(ourTexture, xy)
+        histogram[color] + 1
+      `,
     });
   },
   lockedBin(elem) {
@@ -1213,6 +1282,9 @@ renderDiagrams({
       showImage: false,
       hideUI: true,
       workGroupsLabel: '',
+      code: `
+        atomicAdd(&histogram[color], 1)
+      `,
     });
   },
   /*
@@ -1234,6 +1306,11 @@ renderDiagrams({
       chunksAcross: 1,
       chunksDown: 1,
       showImage: true,
+      code: `
+        xy = glbl_inv_id
+        color = textureLoad(ourTexture, xy)
+        atomicAdd(&histogram[color], 1)
+      `,
     });
   },
   /*
@@ -1263,6 +1340,14 @@ renderDiagrams({
       chunksDown: 2,
       showImage: true,
       bottomLabel: 'chunks',
+      numLinesVisible: 3,
+      code: `
+        xy = w_id * chunkSize * l_id;
+        color = textureLoad(ourTexture, xy)
+        atomicAdd(&histogram[color], 1)
+        wkBarrier();
+        chunk[chunkNdx][bin] = atmcLoad(???)
+      `,
     });
   },
   /*
