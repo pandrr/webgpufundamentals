@@ -14,7 +14,9 @@ I'll just mention my own timing and provide some run-able examples.
 Hopefully this article will provide a good example of making
 a compute shader.
 
-An image histogram is where you sum up all the pixels in an image by their values.
+An image histogram is where you sum up all the pixels in an image by their values or
+by some measure of their values.
+
 For example, this 6x7 image
 
 <div class="center">
@@ -24,7 +26,39 @@ For example, this 6x7 image
   </div>
 </div>
 
-Has 16 red pixels, 8 yellow pixels, and 18 blue pixels.
+It has these colors.
+
+<div class="center">
+  <div>
+    <div data-diagram="colors" style="display: inline-block; width: 240px; max-width: 100%;"></div>
+  </div>
+</div>
+
+For each color we can compute a luminance level, (how bright it is). Looking online I found this
+formula
+
+```js
+// Returns a value from 0 to 1 for luminance.
+// where r, g, b each go from 0 to 1.
+function srgbLuminance(r, g, b) {
+  // from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
+  return r * 0.2126 +
+         g * 0.7152 +
+         b * 0.0722;
+}
+```
+
+Using that we can convert each value to a luminance level
+
+<div class="center">
+  <div>
+    <div data-diagram="luminance" style="display: inline-block; width: 240px; max-width: 100%;"></div>
+  </div>
+</div>
+
+We can decide on a number "bins". Let's decide on 3 bins. 
+We can then quantize those luminance values so they select a "bin"
+and add up the number of pixels that fit in each bin.
 
 <div class="center">
   <div>
@@ -32,7 +66,16 @@ Has 16 red pixels, 8 yellow pixels, and 18 blue pixels.
   </div>
 </div>
 
-That's not so interesting but if we take a picture like this
+Finally we can graph the values in those bins
+
+<div class="center">
+  <div>
+    <div data-diagram="imageHistogramGraph" style="display: inline-block; width: 256px; max-width: 100%;"></div>
+  </div>
+</div>
+
+That's not so interesting with just 3 bins. I graphed it with curves since there are only 3 bins.
+But, if we take a picture like this
 
 <div class="center">
   <div>
@@ -41,25 +84,13 @@ That's not so interesting but if we take a picture like this
   </div>
 </div>
 
-and we count up the pixel values and graph them, we get something like this
+and we count up the pixel luminance values, separate them into say 256 bins, and graph them, we get something like this
 
-<div class="webgpu_center side-by-side">
-  <div>
-    <div><img src="resources/histogram-colors-photoshop.png" style="width: 237px;" class="nobg"></div>
-    <div style="text-align: center;">Colors</div>
-  </div>
+<div class="webgpu_center center">
   <div>
     <div><img src="resources/histogram-luminosity-photoshop.png" style="width: 237px;" class="nobg"></div>
-    <div style="text-align: center;">Luminosity</div>
   </div>
 </div>
-
-On the left we have 3 graphs overlaying each other. They show the
-counts for the various red, green, and blue values of the pixels.
-We can see there is lots of red and green but not nearly as much
-blue except in the low-light areas.
-On the right we have a single graph of the luminosity values of
-the pixels. 
 
 Computing an image histogram is pretty simple. Let's first do it in JavaScript
 
@@ -68,142 +99,88 @@ a histogram. We'll actually make 4 of them. One for red values,
 one for green, one for blue, and one for luminosity.
 
 ```js
-// from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
-function luminance(data, offset) {
-  const r = data[offset + 0];
-  const g = data[offset + 1];
-  const b = data[offset + 2];
-
-  const l = r * 0.2126 / 255 +
-            g * 0.7152 / 255 +
-            b * 0.0722 / 255;
-  return l;
-}
-
 function computeHistogram(numBins, imgData) {
   const {width, height, data} = imgData;
-  const histogram = new Array(numBins * 4).fill(0);
+  const bins = new Array(numBins).fill(0);
   for (let y = 0; y < height; ++y) {
     for (let x = 0; x < width; ++x) {
       const offset = (y * width + x) * 4;
-      for (let ch = 0; ch < 4; ++ch) {
-        const v = ch < 3
-           ? data[offset + ch] / 255
-           : luminance(data, offset);
-        const bin = Math.min(numBins - 1, v * numBins) | 0;
-        ++histogram[bin * 4 + ch];
-      }
+
+      const r = data[offset + 0] / 255;
+      const g = data[offset + 1] / 255;
+      const b = data[offset + 2] / 255;
+      const v = srgbLuminance(r, g, b);
+
+      const bin = Math.min(numBins - 1, v * numBins) | 0;
+      ++bins[bin];
     }
   }
   return histogram;
 }
 ```
 
-As you can see above, we walk through each pixel. For each pixel we walk though
-4 channels, the 4th being luminance. For each channel we compute `v` which is a
-value between 0 and 1.  We then expand that to a bin index and increment that
-bin's count. The function returns the histograms with the channels interleaved
-red, green, blue, luminosity, red, green, blue, luminosity, ...
+As you can see above, we walk through each pixel. We extra r, g, and b.
+We compute a luminance value. We convert that to a bin index and increment
+that bin's count.
 
-Given that, we can graph it. To graph it we need to know the
-highest value in each channel. While we're at it will also
-keep a total as a sanity check. We'll print the total.
-Each channel should total to the number of pixels in our original
-image.
+Once we have that data we can graph it. The main graph function just
+draws a line for each bin multiplied by some scale and the height of
+the canvas.
 
 ```js
-function drawHistogram(histogram, channels, height = 100) {
-  // find the highest value for each channel
-  const max = [0, 0, 0, 0];
-  const total = [0, 0, 0, 0];
-  histogram.forEach((v, i) => {
-    const ch = i % 4;
-    max[ch] = Math.max(max[ch], v);
-    total[ch] += v;
-  });
-  console.log('total:', total);
+  ctx.fillStyle = '#fff';
+
+  for (let x = 0; x < numBins; ++x) {
+    const v = histogram[x] * scale * height;
+    ctx.fillRect(x, height - v, 1, v);
+  }
+
 ```
 
-Now we can create a canvas
+Deciding on a scale appears to be just a personal choice. If you know of a good
+formula for choosing a scale level a comment. Based on looking around the net
+I came up with this formula for scale
 
 ```js
-function drawHistogram(histogram, channels, height = 100) {
-  // find the highest value for each channel
-  const max = [0, 0, 0, 0];
-  const total = [0, 0, 0, 0];
-  histogram.forEach((v, i) => {
-    if (i < 4) {
-      return;
-    }
-    const ch = i % 4;
-    max[ch] = Math.max(max[ch], v);
-    total[ch] += v;
-  });
-  console.log('total:', total);
-
-+  const numBins = histogram.length / 4;
-+  const canvas = document.createElement('canvas');
-+  canvas.width = numBins;
-+  canvas.height = height;
-+  document.body.appendChild(canvas);
-+  const ctx = canvas.getContext('2d');
+  const numBins = histogram.length;
+  const max = Math.max(...histogram);
+  const scale = Math.max(1 / max, 0.2 * numBins / numEntries);
 ```
 
-And then for each bin, for each channel we draw a vertical bar
+Where `numEntries` is the total number of pixels in the image (ie, width * height),
+and basically we're trying to scale so the bin with the most values touches the
+top of the graph but, if that bin is too large then we have some ratio that appears
+to produce a pleasant graph.
+
+Putting it all together we create a 2D canvas and draw
 
 ```js
-function drawHistogram(histogram, channels, height = 100) {
-  // find the highest value for each channel
-  const max = [0, 0, 0, 0];
-  const total = [0, 0, 0, 0];
-  histogram.forEach((v, i) => {
-    const ch = i % 4;
-    max[ch] = Math.max(max[ch], v);
-    total[ch] += v;
-  });
-  console.log('total:', total);
+function drawHistogram(histogram, numEntries, height = 100) {
+  const numBins = histogram.length;
+  const max = Math.max(...histogram);
+  const scale = Math.max(1 / max, 0.2 * numBins / numEntries);
 
-  const numBins = histogram.length / 4;
   const canvas = document.createElement('canvas');
   canvas.width = numBins;
   canvas.height = height;
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
 
-+  for (let x = 0; x < numBins; ++x) {
-+    const offset = x * 4;
-+    for (const ch of channels) {
-+      const scale = 0.2 * numBins / total[ch];
-+      const v = histogram[offset + ch] * scale * height;
-+      ctx.fillStyle = colors[ch];
-+      ctx.fillRect(x, height - v, 1, v);
-+    }
-+  }
-+}
+  ctx.fillStyle = '#fff';
+
+  for (let x = 0; x < numBins; ++x) {
+    const v = histogram[x] * scale * height;
+    ctx.fillRect(x, height - v, 1, v);
+  }
+}
 ```
 
-Note: I have no idea why it's `0.2 * numBins`. In found that in
-a sample and it made the graph look similar to other graphs for
-certain cases.
-
-Now we need to load an image
+Now we need to load an image. We'll use the code we
+wrote in [the article on loading images](webgpu-importing-textures.html).
 
 ```js
 async function main() {
-  const img = new Image();
-  img.src = 'resources/images/pexels-francesco-ungaro-96938-sm.jpg';
-  await img.decode();
-
-  // Add it to the document so we can see it
-  document.body.appendChild(img);
-```
-
-Let's add some CSS so it's not displayed too big
-
-```css
-img {
-  max-width: 256px;
-}
+  const imgBitmap = await loadImageBitmap('resources/images/pexels-francesco-ungaro-96938-mid.jpg');
 ```
 
 We need get the data from an image. To do that we can draw the image
@@ -223,29 +200,44 @@ function getImageData(img) {
 }
 ```
 
+We'll also write a function to display an `ImageBitmap`
+
+```js
+function showImageBitmap(imageBitmap) {
+  const canvas = document.createElement('canvas');
+  canvas.width = imageBitmap.width;
+  canvas.height = imageBitmap.height;
+
+  const bm = canvas.getContext('bitmaprenderer');
+  bm.transferFromImageBitmap(imageBitmap);
+  document.body.appendChild(canvas);
+}
+```
+
+Let's add some CSS so things not displayed too big
+
+```css
+canvas {
+  display: block;
+  max-width: 256px;
+  border: 1px solid #888;
+}
+```
+
 And then what's left to do is to call the functions we wrote above.
 
 ```js
 async function main() {
-  const img = new Image();
-  img.crossOrigin = '*';
-  img.src = 'resources/images/pexels-francesco-ungaro-96938-sm.jpg';
-  await img.decode();
+  const imgBitmap = await loadImageBitmap('resources/images/pexels-francesco-ungaro-96938-mid.jpg');
 
-  // Add it to the document so we can see it
-  document.body.appendChild(img);
-
-  const imgData = getImageData(img);
+  const imgData = getImageData(imgBitmap);
   const numBins = 256;
   const histogram = computeHistogram(numBins, imgData);
 
   showImageBitmap(imgBitmap);
 
-  // draw the red, green, and blue channels
-  drawHistogram(histogram, [0, 1, 2]);
-
-  // draw the luminosity channel
-  drawHistogram(histogram, [3]);
+  const numEntries = imgData.width * imgData.height;
+  drawHistogram(histogram, numEntries);
 }
 ```
 
@@ -256,7 +248,7 @@ And here's the image histogram.
 Hopefully it was easy to follow what the JavaScript code is doing.
 Let's convert it to WebGPU!
 
-# <a id="a-comptuing-a-histogram"></a>Computing a histogram
+# <a id="a-comptuing-a-histogram"></a>Computing a histogram on the GPU
 
 Let's start with the most obvious solution. We'll directly
 convert the JavaScript `computeHistogram` function to WGSL.
@@ -265,16 +257,13 @@ The luminance function is pretty straight forward. Here the
 JavaScript again
 
 ```js
-// from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
-function luminance(data, offset) {
-  const r = data[offset + 0];
-  const g = data[offset + 1];
-  const b = data[offset + 2];
-
-  const l = r * 0.2126 / 255 +
-            g * 0.7152 / 255 +
-            b * 0.0722 / 255;
-  return l;
+// Returns a value from 0 to 1 for luminance.
+// where r, g, b each go from 0 to 1.
+function srgbLuminance(r, g, b) {
+  // from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
+  return r * 0.2126 +
+         g * 0.7152 +
+         b * 0.0722;
 }
 ```
 
@@ -297,51 +286,54 @@ fn dot(a: vec3f, b: vec3f) -> f32 { return a.x * b.x + a.y * b.y + a.z * b.z; }
 ```
 
 Which is what we had in JavaScript. The major difference is in WGSL we'll
-pass in the color as a `vec3f` instead of the data and an offset, and,
-the color data will already be in 0.0 to 1.0 values so we don't have to
-divide by 255.
+pass in the color as a `vec3f` instead of the individual channels.
 
 For the main part of computing a histogram, here's the JavaScript again
 
 ```js
 function computeHistogram(numBins, imgData) {
   const {width, height, data} = imgData;
-  const histogram = new Array(numBins * 4).fill(0);
+  const bins = new Array(numBins).fill(0);
   for (let y = 0; y < height; ++y) {
     for (let x = 0; x < width; ++x) {
       const offset = (y * width + x) * 4;
-      for (let ch = 0; ch < 4; ++ch) {
-        const v = ch < 3
-           ? data[offset + ch] / 255
-           : luminance(data, offset);
-        const bin = Math.min(numBins - 1, v * numBins) | 0;
-        ++histogram[bin * 4 + ch];
-      }
+
+      const r = data[offset + 0] / 255;
+      const g = data[offset + 1] / 255;
+      const b = data[offset + 2] / 255;
+      const v = srgbLuminance(r, g, b);
+
+      const bin = Math.min(numBins - 1, v * numBins) | 0;
+      ++bins[bin];
     }
   }
-  return histogram;
+  return bins;
 }
 ```
 
 Here's the corresponding WGSL
 
 ```js
-@group(0) @binding(0) var<storage, read_write> histogram: array<vec4u>;
+@group(0) @binding(0) var<storage, read_write> bins: array<u32>;
 @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
-@compute @workgroup_size(1, 1, 1) fn cs() {
+// from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
+const kSRGBLuminanceFactors = vec3f(0.2126, 0.7152, 0.0722);
+fn srgbLuminance(color: vec3f) -> f32 {
+  return saturate(dot(color, kSRGBLuminanceFactors));
+}
+
+@compute @workgroup_size(1) fn cs() {
   let size = textureDimensions(ourTexture, 0);
   let numBins = f32(arrayLength(&histogram));
   let lastBinIndex = u32(numBins - 1);
   for (var y = 0u; y < size.y; y++) {
     for (var x = 0u; x < size.x; x++) {
       let position = vec2u(x, y);
-      var channels = textureLoad(ourTexture, position, 0);
-      channels.w = srgbLuminance(channels.rgb);
-      for (var ch = 0; ch < 4; ch++) {
-        let bin = min(u32(channels[ch] * numBins), lastBinIndex);
-        histogram[bin][ch] += 1;
-      }
+      let color = textureLoad(ourTexture, position, 0);
+      let v = srgbLuminance(color.rgb);
+      let bin = min(u32(v * numBins), lastBinIndex);
+      bins[bin] += 1;
     }
   }
 }
@@ -366,35 +358,25 @@ JavaScript.
     for (var x = 0u; x < size.x; x++) {
 ```
 
-We call `textureLoad` to get the channels from the texture.
+We call `textureLoad` to get the color from the texture.
 
 ```wgsl
       let position = vec2u(x, y);
-      var channels = textureLoad(ourTexture, position, 0);
+      let color = textureLoad(ourTexture, position, 0);
 ```
 
 `textureLoad` returns a single texel from a single mip level of a texture.
 It takes a texture, an unsigned integer texel coordinate, and a mip level
 (the `0`).
 
-We compute a luminance value and store it as the 4th channel
+We compute a luminance value, convert it to a bin index and increment that bin.
 
 ```wgsl
       let position = vec2u(x, y);
-      var channels = textureLoad(ourTexture, position, 0);
-+      channels.w = srgbLuminance(channels.rgb);
-```
-
-For each channel we get a channel value or a luminance value,
-convert it to a bin index and increment the bin.
-
-```wgsl
-      var channels = textureLoad(ourTexture, position, 0);
-      channels.w = srgbLuminance(channels.rgb);
-+      for (var ch = 0; ch < 4; ch++) {
-+        let bin = min(u32(channels[ch] * numBins), lastBinIndex);
-+        histogram[bin][ch] += 1;
-+      }
+      let color = textureLoad(ourTexture, position, 0);
++      let v = srgbLuminance(color.rgb);
++      let bin = min(u32(v * numBins), lastBinIndex);
++      bins[bin] += 1;
 ```
 
 Now the we have a compute shader, let's use it
@@ -417,7 +399,7 @@ then we create our shader
   const module = device.createShaderModule({
     label: 'histogram shader',
     code: `
-      @group(0) @binding(0) var<storage, read_write> histogram: array<vec4u>;
+      @group(0) @binding(0) var<storage, read_write> bins: array<u32>;
       @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
       // from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
@@ -426,20 +408,17 @@ then we create our shader
         return saturate(dot(color, kSRGBLuminanceFactors));
       }
 
-      @compute @workgroup_size(1, 1, 1)
-      fn cs() {
+      @compute @workgroup_size(1) fn cs() {
         let size = textureDimensions(ourTexture, 0);
         let numBins = f32(arrayLength(&histogram));
         let lastBinIndex = u32(numBins - 1);
         for (var y = 0u; y < size.y; y++) {
           for (var x = 0u; x < size.x; x++) {
             let position = vec2u(x, y);
-            var channels = textureLoad(ourTexture, position, 0);
-            channels.w = srgbLuminance(channels.rgb);
-            for (var ch = 0; ch < 4; ch++) {
-              let bin = min(u32(channels[ch] * numBins), lastBinIndex);
-              histogram[bin][ch] += 1;
-            }
+            let color = textureLoad(ourTexture, position, 0);
+            let v = srgbLuminance(color.rgb);
+            let bin = min(u32(v * numBins), lastBinIndex);
+            bins[bin] += 1;
           }
         }
       }
@@ -460,22 +439,13 @@ We create a compute pipeline to run the shader
   });
 ```
 
-After we load the texture we need to make a texture and copy the date to it.
+After we load the image we need to make a texture and copy the data to it.
 We'll use the `createTextureFromSource` function we wrote in
 [the article on loading images into textures](webgpu-importing-textures.html#a-create-texture-from-source).
 
 ```js
-  const img = new Image();
-  img.crossOrigin = '*';
-  img.src = 'resources/images/pexels-francesco-ungaro-96938-mid.jpg'; /* webgpufundamentals: url */
-  await img.decode();
-
-  // Add it to the document so we can see it
-  document.body.appendChild(img);
-
-+  // Upload the image into a texture.
-+  const imgBitmap = await createImageBitmap(img, { colorSpaceConversion: 'none' });
-+  const texture = createTextureFromSource(device, imgBitmap);
+  const imgBitmap = await loadImageBitmap('resources/images/pexels-francesco-ungaro-96938-mid.jpg');
+  const texture = createTextureFromSource(device, imgBitmap);
 ```
 
 We need to create a storage buffer for the shader to sum up the color values with
@@ -483,7 +453,7 @@ We need to create a storage buffer for the shader to sum up the color values wit
 ```js
   const numBins = 256;
   const histogramBuffer = device.createBuffer({
-    size: numBins * 4 * 4, // 256 entries * 4 (rgba) * 4 bytes per (u32)
+    size: numBins * 4 * 4, // 256 entries * 4 bytes per (u32)
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
   });
 ```
@@ -560,11 +530,12 @@ to draw the histogram
 
   showImageBitmap(imgBitmap);
 
-  // draw the red, green, and blue channels
-  drawHistogram(histogram, [0, 1, 2]);
+  const histogram = new Uint32Array(resultBuffer.getMappedRange());
 
-  // draw the luminosity channel
-  drawHistogram(histogram, [3]);
+  showImageBitmap(imgBitmap);
+
+  const numEntries = texture.width * texture.height;
+  drawHistogram(histogram, numEntries);
 
   resultBuffer.unmap();
 ```
@@ -573,14 +544,14 @@ And it should work
 
 <!-- {{{example url="../webgpu-compute-shaders-histogram-slow-draw-in-js.html"}}} -->
 
-Timing the results I found **this is about 6x slower than the JavaScript version!!!** 😱
+Timing the results I found **this is about 30x slower than the JavaScript version!!!** 😱😱😱
 
 What's up with that? We designed our solution above with a single loop and used
 a single workgroup invocation with a size of 1. That means just a single "core" of
-the GPU was used to compute the histogram. GPU cores are generally, not as fast
+the GPU was used to compute the histogram. GPU cores are generally not as fast
 as CPU cores. CPU cores have tons of extra circuitry to try to speed them up.
 GPUs get their speed from massive parallelization but need to keep their design simpler.
-Given our design above we didn't take advantage of any parallelization.
+Given our shader above we didn't take advantage of any parallelization.
 
 Here's a diagram of what's happening using our small example texture.
 
@@ -593,10 +564,12 @@ Here's a diagram of what's happening using our small example texture.
 > These diagrams are not a perfect representation of our shaders
 >
 > * They show only 3 bins where as our shader has 256 bins
-> * They show a single channel where as our shader has 4 channels
 > * The code is simplified.
+> * ▢ is the texel color
+> * ◯ is the bin represented as luminance
 > * Many things are abbreviated.
 >   * `wid` = `workgroup_id`
+>   * `gid` = `global_invocation_id`
 >   * `lid` = `local_invocation_id`
 >   * `ourTex` = `ourTexture`
 >   * `texLoad` = `textureLoad`

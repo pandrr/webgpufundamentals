@@ -27,10 +27,6 @@ async function main() {
     requiredFeatures: [
       ...(canTimestamp ? ['timestamp-query'] : []),
     ],
-    requiredLimits: {
-      maxBufferSize: 1024 * 1024 * 1024,
-      maxStorageBufferBindingSize: 1024 * 1024 * 1024,
-    },
   });
   if (!device) {
     fail('need a browser that supports WebGPU');
@@ -52,7 +48,7 @@ async function main() {
     code: `
       ${sharedConstants}
       const chunkSize = chunkWidth * chunkHeight;
-      var<workgroup> histogram: array<array<atomic<u32>, 4>, chunkSize>;
+      var<workgroup> histogram: array<atomic<u32>, chunkSize>;
       @group(0) @binding(0) var<storage, read_write> histogramChunks: array<array<vec4u, chunkSize>>;
       @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
@@ -72,12 +68,10 @@ async function main() {
         if (all(position < size)) {
           let numBins = f32(chunkSize);
           let lastBinIndex = u32(numBins - 1);
-          var channels = textureLoad(ourTexture, position, 0);
-          channels.w = srgbLuminance(channels.rgb);
-          for (var ch = 0; ch < 4; ch++) {
-            let bin = min(u32(channels[ch] * numBins), lastBinIndex);
-            atomicAdd(&histogram[bin][ch], 1u);
-          }
+          let color = textureLoad(ourTexture, position, 0);
+          let v = srgbLuminance(color.rgb);
+          let bin = min(u32(v * numBins), lastBinIndex);
+          atomicAdd(&histogram[bin], 1u);
         }
 
         workgroupBarrier();
@@ -86,12 +80,7 @@ async function main() {
         let chunk = workgroup_id.y * chunksAcross + workgroup_id.x;
         let bin = local_invocation_id.y * chunkWidth + local_invocation_id.x;
 
-        histogramChunks[chunk][bin] = vec4u(
-          atomicLoad(&histogram[bin][0]),
-          atomicLoad(&histogram[bin][1]),
-          atomicLoad(&histogram[bin][2]),
-          atomicLoad(&histogram[bin][3]),
-        );
+        histogramChunks[chunk][bin] = vec4u(atomicLoad(&histogram[bin]));
       }
     `,
   });
@@ -127,17 +116,15 @@ async function main() {
         @builtin(local_invocation_id) local_invocation_id: vec3u,
         @builtin(workgroup_id) workgroup_id: vec3u,
       ) {
-        var sum = vec4u(0);
         let chunk0 = workgroup_id.x * uni.stride * 2;
         let chunk1 = chunk0 + uni.stride;
 
-        histogramChunks[chunk0][local_invocation_id.x] =
-            histogramChunks[chunk0][local_invocation_id.x] +
-            histogramChunks[chunk1][local_invocation_id.x];
+        let sum = histogramChunks[chunk0][local_invocation_id.x] +
+                  histogramChunks[chunk1][local_invocation_id.x];
+        histogramChunks[chunk0][local_invocation_id.x] = sum;
       }
     `,
   });
-
 
   const histogramChunkPipeline = device.createComputePipeline({
     label: 'histogram',
@@ -235,6 +222,7 @@ async function main() {
 
   const encoder = device.createCommandEncoder({ label: 'histogram encoder' });
 
+  // create a histogram for each area
   {
     const pass = timingHelper.beginComputePass(encoder);
     pass.setPipeline(histogramChunkPipeline);
@@ -243,6 +231,7 @@ async function main() {
     pass.end();
   }
 
+  // reduce the areas
   {
     const pass = timingHelper2.beginComputePass(encoder);
     pass.setPipeline(chunkSumPipeline);
@@ -275,63 +264,41 @@ async function main() {
   });
 
   await resultBuffer.mapAsync(GPUMapMode.READ);
-  const histogram = new Uint32Array(resultBuffer.getMappedRange());
+  const result = new Uint32Array(resultBuffer.getMappedRange());
+  const histogram = new Uint32Array(result.length / 4);
+  histogram.forEach((_, i) => {
+    histogram[i] = result[i * 4];
+  });
 
   showImageBitmap(imgBitmap);
 
-  // draw the red, green, and blue channels
-  drawHistogram(histogram, [0, 1, 2]);
-
-  // draw the luminosity channel
-  drawHistogram(histogram, [3]);
+  const numEntries = texture.width * texture.height;
+  drawHistogram(histogram, numEntries);
 
   resultBuffer.unmap();
 }
 
+function drawHistogram(histogram, numEntries, height = 100) {
+  const numBins = histogram.length;
+  const max = Math.max(...histogram);
+  const scale = Math.max(1 / max, 0.2 * numBins / numEntries);
 
-function drawHistogram(histogram, channels, height = 100) {
-  // find the highest value for each channel
-  const max = [0, 0, 0, 0];
-  const total = [0, 0, 0, 0];
-  histogram.forEach((v, i) => {
-    const ch = i % 4;
-    max[ch] = Math.max(max[ch], v);
-    total[ch] += v;
-  });
-  console.log('total:', total);
-
-  const numBins = histogram.length / 4;
   const canvas = document.createElement('canvas');
   canvas.width = numBins;
   canvas.height = height;
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
 
-  const colors = [
-    'rgb(255, 0, 0)',
-    'rgb(0, 255, 0)',
-    'rgb(0, 0, 255)',
-    'rgb(255, 255, 255)',
-  ];
-
-  ctx.globalCompositeOperation = 'screen';
+  ctx.fillStyle = '#fff';
 
   for (let x = 0; x < numBins; ++x) {
-    const offset = x * 4;
-    for (const ch of channels) {
-      const scale = 0.2 * numBins / total[ch];
-      const v = histogram[offset + ch] * scale * height;
-      ctx.fillStyle = colors[ch];
-      ctx.fillRect(x, height - v, 1, v);
-    }
+    const v = histogram[x] * scale * height;
+    ctx.fillRect(x, height - v, 1, v);
   }
 }
 
 function showImageBitmap(imageBitmap) {
   const canvas = document.createElement('canvas');
-
-  // we have to see the canvas size because of a firefox bug
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=1850871
   canvas.width = imageBitmap.width;
   canvas.height = imageBitmap.height;
 

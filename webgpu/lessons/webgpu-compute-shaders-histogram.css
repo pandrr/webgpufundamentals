@@ -37,6 +37,16 @@
 .histogram-img {
   background-color: #777;
 }
+[data-diagram=colors] tbody,
+[data-diagram=luminance] tbody {
+  text-align: center;
+}
+
+.color-cell {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+}
 
 @media (prefers-color-scheme: dark) {
   .compute-diagram {

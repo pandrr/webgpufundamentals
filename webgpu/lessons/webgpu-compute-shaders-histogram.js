@@ -8,7 +8,7 @@ import { SVG as svg } from '/3rdparty/svg.esm.js';
 import {
   createElem as el, select, radio, checkbox, makeTable,
 } from './resources/elem.js';
-import { clamp01, hsl, lerp, rgba } from './resources/utils.js';
+import { clamp01, hsl, lerp, rgba, rgba8unormFromCSS } from './resources/utils.js';
 
 
 const image = [
@@ -53,6 +53,16 @@ const unicodeBinColorsToCSS = {
   '🟨': '#880',
   '🟦': '#008',
 };
+
+
+// Returns a value from 0 to 1 for luminance.
+// where r, g, b each go from 0 to 1.
+function srgbLuminance(data, r, g, b) {
+  // from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
+  return r * 0.2126 +
+         g * 0.7152 +
+         b * 0.0722;
+}
 
 
 const imgChunkData = [];
@@ -134,7 +144,8 @@ const numBins = kBins.length;
 function createChunk(draw, size, lockColor) {
   const group = draw.group();
   const bins = kBins.map((color, binNdx) => {
-    const bin = createBin(group, unicodeBinColorsToCSS[color], size, lockColor);
+    const bin = createBin(group, hsl(1, 0, (binNdx + 0.5) / numBins), size, lockColor);
+    //const bin = createBin(group, unicodeBinColorsToCSS[color], size, lockColor);
     bin.group.transform({translateY: binNdx * size});
     return bin;
   });
@@ -143,6 +154,8 @@ function createChunk(draw, size, lockColor) {
     bins,
   };
 }
+
+const binNdxToBinColor = kBins.map((_, i) => hsl(0, 0, (i + 0.5) / kBins.length));
 
 const setTranslation = (e, x, y) => e.attr({transform: `translate(${x}, ${y})`});
 const range = (n, fn) => new Array(n).fill(0).map((_, v) => fn(v));
@@ -509,14 +522,15 @@ function makeComputeDiagram(elem, {
       maskGroup.maskWith(mask);
       const belowCodeLinesY = numLinesVisible * size * 0.4 + size * 0.5;
 
-      const color = group.group().transform({translate: [kWidth / 2 + size / 4, belowCodeLinesY + size * 0.375]}).rect(size / 2, size / 2).fill('#888').stroke({color: '#000', width: 0.5});
+      const color = group.group().transform({translate: [kWidth / 2 - size * 1, belowCodeLinesY + size * 0.625]}).rect(size / 2, size / 2).center(0, 0).stroke({color: '#000', width: 0.5});
+      const bin = group.group().transform({translate: [kWidth / 2 + size * 1, belowCodeLinesY + size * 0.625]}).circle(size / 2).center(0, 0).stroke({color: '#000', width: 0.5});
       const text = makeText(group, '0').font({anchor: 'middle', size: '8'});
       //group.text(id).font({
       //  family: 'monospace',
       //  weight: 'bold',
       //  size: '8',
       //}).move(0, -2).fill('rgba(0, 0, 0, 0.5)');
-      setTranslation(text, kWidth / 2 - size * 0.5, belowCodeLinesY + size * (0.75));
+      setTranslation(text, kWidth / 2 + size * 0, belowCodeLinesY + size * (0.75));
       const lock = group
           .polygon([[0, 0], [1, 0], [1, 1], [0, 1]])
           .move(size, belowCodeLinesY + size * 0.25)
@@ -531,12 +545,13 @@ function makeComputeDiagram(elem, {
       const barrier = group.image('/webgpu/lessons/resources/barrier.svg').size(size, size).move((kWidth - size) / 2, belowCodeLinesY + size * 0.125).hide();
       const fetchHandle = group.group().transform({translateX: kWidth / 2, translateY: belowCodeLinesY + size * 0.75});
       const plus = group.group();
-      plus.rect(size / 6, size / 2).center(kWidth / 2 - size / 2, belowCodeLinesY + size * 0.625);
-      plus.rect(size / 2, size / 6).center(kWidth / 2 - size / 2, belowCodeLinesY + size * 0.625);
+      plus.rect(size / 6, size / 2).center(kWidth / 2, belowCodeLinesY + size * 0.625);
+      plus.rect(size / 2, size / 6).center(kWidth / 2, belowCodeLinesY + size * 0.625);
       plus.hide();
       return {
         group,
         color,
+        bin,
         text,
         fetchHandle,
         header,
@@ -703,11 +718,13 @@ function makeComputeDiagram(elem, {
       workgroup.invocations.map((invocation, id) => {
         const toInvocation = getTransformToElement(draw.node, invocation.fetchHandle.node);
         const toColor = getTransformToElement(draw.node, invocation.color.node);
+        const toBin = getTransformToElement(draw.node, invocation.bin.node);
         const toText = getTransformToElement(draw.node, invocation.text.node);
         const invPoint = new DOMPoint(0, 0).matrixTransform(toInvocation);
         // why doesn't this work?
-        const colorPoint = new DOMPoint(size / 4, size / 4).matrixTransform(toColor);
+        const colorPoint = new DOMPoint(0, 0).matrixTransform(toColor);
         const numPoint = new DOMPoint(0, 0).matrixTransform(toText);
+        const binPoint = new DOMPoint(0, 0).matrixTransform(toBin);
 
         const ig = draw.group();
         const sx = invPoint.x;
@@ -716,6 +733,9 @@ function makeComputeDiagram(elem, {
         const numY = numPoint.y - 3;
         const colX = colorPoint.x;
         const colY = colorPoint.y;
+        const binX = binPoint.x;
+        const binY = binPoint.y;
+
         let ex = sx;
         let ey = sy;
 
@@ -737,15 +757,19 @@ function makeComputeDiagram(elem, {
         text.attr({cx: 0, cy: 0, 'dominant-baseline': 'central'});
         targetGroup.transform({translate: colorPoint});
 
-        function* goto(targetX, targetY, duration = 1) {
+        function* goto(targetX, targetY, startX, startY, initialX, initialY) {
           line.show();
           circle.show();
+          if (initialY !== undefined) {
+            ex = initialX;
+            ey = initialY;
+          }
           yield lerpStep(t => {
             const x = lerp(ex, targetX, t);
             const y = lerp(ey, targetY, t);
-            line.plot(sx, sy, x, y);
+            line.plot(startX, startY, x, y);
             targetGroup.transform({translate: [x, y]});
-          }, duration);
+          }, 1);
           yield waitSeconds(0.25);
           ex = targetX;
           ey = targetY;
@@ -785,16 +809,16 @@ function makeComputeDiagram(elem, {
 
         function* textureLoad(tx, ty, texel) {
           yield invocation.setInstructions('textureLoad(...)');
-          yield goto(imgX + (tx + 0.5) * size, imgY + (ty + 0.5) * size);
+          yield goto(imgX + (tx + 0.5) * size, imgY + (ty + 0.5) * size, colX, colY, colX, colY);
           const color = unicodeColorsToCSS[texel];
           rect.show();
           rect.fill(color);
-          yield goto(colX, colY);
+          yield goto(colX, colY, colX, colY);
           invocation.color.fill(color);
           rect.hide();
         }
 
-        function* doOne(tx, ty, useBarrier) {
+        function* doOne(tx, ty, useBarrier, inLoop) {
           // read texture
           const texel = image[ty][tx];
           const color = unicodeColorsToCSS[texel];
@@ -803,6 +827,11 @@ function makeComputeDiagram(elem, {
           const binNdx = texelColorToBinNdx[texel];
           const chunk = chunks[0];
           const storageBin = chunk.bins[binNdx];
+
+          yield fadeLine();
+          yield invocation.advanceLine();  // convert to luminance
+          invocation.bin.fill(binNdxToBinColor[binNdx]);
+          yield invocation.advanceLine();  // convert to bin
 
           if (useBarrier) {
             line.hide();
@@ -822,15 +851,16 @@ function makeComputeDiagram(elem, {
             storageBin.lock.show();
             {
               const toInvocation = getTransformToElement(invocation.group.node, storageBin.group.node);
-              const toColor = getTransformToElement(invocation.group.node, invocation.color.node);
+              const toBin = getTransformToElement(invocation.group.node, invocation.bin.node);
               const p2 = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
-              const p1 = new DOMPoint(size / 4, size / 4).matrixTransform(toColor);
+              const p1 = new DOMPoint(0, 0).matrixTransform(toBin);
+              const color = binNdxToBinColor[binNdx];
               invocation.lockLine
                 .show()
                 .plot(p2.x, p2.y, p1.x, p1.y)
                 .stroke(color)
                 .css({
-                  opacity: '0.5',
+                  opacity: '0.75',
                 });
             }
           } else {
@@ -842,11 +872,11 @@ function makeComputeDiagram(elem, {
           const chunkBin = chunk.bins[binNdx];
 //                const toInvocation = getTransformToElement(invocation.group.node, chunkBin.group.node);
           const chunkBinPosition = getBinPosition(draw, chunkBin, size);
-          yield goto(...chunkBinPosition);
+          yield goto(...chunkBinPosition, numX, numY);
 
           text.text(chunkBin.text.text());
 
-          yield goto(numX, numY);
+          yield goto(numX, numY, numX, numY);
           invocation.text.text(text.text());
           text.text('');
 
@@ -856,7 +886,7 @@ function makeComputeDiagram(elem, {
 
           // put in bin
           text.text(invocation.text.text());
-          yield goto(...chunkBinPosition);
+          yield goto(...chunkBinPosition, numX, numY);
           chunkBin.text.text(text.text());
           text.text('');
 
@@ -870,7 +900,6 @@ function makeComputeDiagram(elem, {
           yield fadeLine();
           invocation.color.fill('#888');
           invocation.text.text('');
-          yield invocation.advanceLine();
           yield invocation.setInstructions('-');
         }
 
@@ -892,10 +921,10 @@ function makeComputeDiagram(elem, {
             const chunkNdx = baseChunkNdx + ndx * uniformStride;
             yield invocation.setInstructions(`sum += chunks[${chunkNdx}][${local_invocation_id.x}]`);
             const { chunkBinPosition, chunkValue } = getChunkInfo(chunkNdx, local_invocation_id.x);
-            yield goto(...chunkBinPosition);
+            yield goto(...chunkBinPosition, numX, numY);
             text.text(chunkValue);
 
-            yield goto(numX, numY);
+            yield goto(numX, numY, numX, numY);
             text.text('');
             line.hide();
             circle.hide();
@@ -913,7 +942,7 @@ function makeComputeDiagram(elem, {
             yield invocation.advanceLine();
             yield invocation.setInstructions(`chunks[${baseChunkNdx}][${local_invocation_id.x}] = sum`);
             const { chunkBinPosition, chunkBin } = getChunkInfo(baseChunkNdx, local_invocation_id.x);
-            yield goto(...chunkBinPosition);
+            yield goto(...chunkBinPosition, numX, numY);
             chunkBin.text.text(invocation.text.text());
 
             for (let ndx = 1; ndx < numChunks; ++ndx) {
@@ -934,7 +963,9 @@ function makeComputeDiagram(elem, {
               yield invocation.goToLine(0);
               for (let tx = 0; tx < pixelsAcross; ++tx) {
                 yield invocation.goToLine(1);
-                yield doOne(tx, ty, false, 2);
+                yield invocation.advanceLine();
+                yield doOne(tx, ty, false);
+                yield invocation.advanceLine();
               }
             }
           },
@@ -953,9 +984,9 @@ function makeComputeDiagram(elem, {
           lockedBin: function*({global_invocation_id}) {
             yield invocation.setInstructions('atomicAdd(&histogram[bin], 1)', 0);
             const texel = kBins[2];
-            const color = unicodeColorsToCSS[texel];
-            invocation.color.fill(color);
             const binNdx = texelColorToBinNdx[texel];
+            const color = binNdxToBinColor[binNdx];
+            invocation.bin.fill(color);
             const chunk = chunks[0];
             const storageBin = chunk.bins[binNdx];
             switch (global_invocation_id.x) {
@@ -963,15 +994,15 @@ function makeComputeDiagram(elem, {
                 storageBin.lock.show();
                 {
                   const toInvocation = getTransformToElement(invocation.group.node, storageBin.group.node);
-                  const toColor = getTransformToElement(invocation.group.node, invocation.color.node);
+                  const toBin = getTransformToElement(invocation.group.node, invocation.bin.node);
                   const p2 = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
-                  const p1 = new DOMPoint(size / 4, size / 4).matrixTransform(toColor);
+                  const p1 = new DOMPoint(0, 0).matrixTransform(toBin);
                   invocation.lockLine
                     .show()
                     .plot(p2.x, p2.y, p1.x, p1.y)
                     .stroke(color)
                     .css({
-                      opacity: '0.5',
+                      opacity: '0.75',
                     });
                 }
                 break;
@@ -992,10 +1023,12 @@ function makeComputeDiagram(elem, {
 
             // read texture
             const texel = image[ty][tx];
-            const color = unicodeColorsToCSS[texel];
             yield textureLoad(tx, ty, texel);
-
+            yield invocation.advanceLine();
             const binNdx = texelColorToBinNdx[texel];
+            invocation.bin.fill(binNdxToBinColor[binNdx]);
+            yield invocation.advanceLine();
+
             // wait for bin to be free
             yield invocation.advanceLine();
             yield invocation.setInstructions('atomicAdd(bin[color], 1)');
@@ -1012,23 +1045,24 @@ function makeComputeDiagram(elem, {
             workgroupBin.lock.show();
             {
               const toInvocation = getTransformToElement(invocation.group.node, workgroupBin.group.node);
-              const toColor = getTransformToElement(invocation.group.node, invocation.color.node);
+              const toBin = getTransformToElement(invocation.group.node, invocation.bin.node);
               const p2 = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
-              const p1 = new DOMPoint(size / 4, size / 4).matrixTransform(toColor);
+              const p1 = new DOMPoint(0, 0).matrixTransform(toBin);
+              const color = binNdxToBinColor[binNdx];
               invocation.lockLine
                 .show()
                 .plot(p2.x, p2.y, p1.x, p1.y)
                 .stroke(color)
                 .css({
-                  opacity: '0.5',
+                  opacity: '0.75',
                 });
             }
 
             // get bin value
-            yield goto(...binPosition);
+            yield goto(...binPosition, numX, numY);
             const value = workgroupStorage[binNdx];
             text.text(value);
-            yield goto(numX, numY);
+            yield goto(numX, numY, numX, numY);
 
             // store bin value
             text.text('');
@@ -1039,7 +1073,7 @@ function makeComputeDiagram(elem, {
             text.text('');
             yield goUpScaleAndFade(invocation.plus);
             text.text(value + 1);
-            yield goto(...binPosition);
+            yield goto(...binPosition, numX, numY);
             workgroupStorage[binNdx] = value + 1;
             workgroupBin.text.text(value + 1);
             text.text('');
@@ -1068,10 +1102,10 @@ function makeComputeDiagram(elem, {
             yield invocation.setInstructions('chunks[bin]=');
             const srcBin = workgroup.chunk.bins[local_invocation_id.x];
             const srcBinPosition = getBinPosition(draw, srcBin, size);
-            yield goto(...srcBinPosition);
+            yield goto(...srcBinPosition, numX, numY);
             const binTotal = workgroupStorage[local_invocation_id.x];
             text.text(binTotal);
-            yield goto(numX, numY);
+            yield goto(numX, numY, numX, numY);
             invocation.text.text(binTotal);
 
             const chunkAcross = (pixelsAcross / kWaveSize);
@@ -1079,7 +1113,7 @@ function makeComputeDiagram(elem, {
             const chunk = chunks[chunkNdx];
             const chunkBin = chunk.bins[local_invocation_id.x];
             const chunkBinPosition = getBinPosition(draw, chunkBin, size);
-            yield goto(...chunkBinPosition);
+            yield goto(...chunkBinPosition, numX, numY);
             chunkBin.text.text(binTotal);
             text.text('');
             //yield goto(sx, sy, 0);
@@ -1236,6 +1270,40 @@ renderDiagrams({
     const draw = svg().addTo(diagramDiv).viewbox(0, 0, totalWidth, totalHeight);
     createImage(draw, image, size);
   },
+  colors(elem) {
+    const diagramDiv = el('div');
+    const uiDiv = el('div');
+    const div = el('div', { className: 'data-table center'}, [diagramDiv, uiDiv]);
+    elem.appendChild(div);
+    const addRow = makeTable(div, ['color', 'r', 'g', 'b']);
+    const colors = Object.keys(texelColorToBinNdx);
+    for (const color of colors) {
+      const cssColor = unicodeColorsToCSS[color];
+      const data = rgba8unormFromCSS(cssColor);
+      addRow([
+        el('div', {className: 'color-cell', style: { backgroundColor: cssColor}}), data[0], data[1], data[2],
+      ]);
+    }
+  },
+  luminance(elem) {
+    const diagramDiv = el('div');
+    const uiDiv = el('div');
+    const div = el('div', { className: 'data-table center'}, [diagramDiv, uiDiv]);
+    elem.appendChild(div);
+    const addRow = makeTable(div, ['color', 'r', 'g', 'b', 'luminance']);
+    const colors = Object.keys(texelColorToBinNdx);
+    for (const color of colors) {
+      const cssColor = unicodeColorsToCSS[color];
+      const data = rgba8unormFromCSS(cssColor);
+      addRow([
+        el('div', {className: 'color-cell', style: { backgroundColor: cssColor}}),
+        data[0],
+        data[1],
+        data[2],
+        srgbLuminance(...data.map(v => v / 255)).toFixed(2),
+      ]);
+    }
+  },
   /*
    []
    []
@@ -1250,6 +1318,47 @@ renderDiagrams({
       const count = pixels.filter(v => v === color).length;
       chunk.bins[bin].text.text(count);
     });
+ },
+ imageHistogramGraph(elem) {
+    const diagramDiv = el('div');
+    const uiDiv = el('div');
+    const div = el('div', {}, [diagramDiv, uiDiv]);
+    elem.appendChild(div);
+    const w = 256;
+    const h = 150;
+    const draw = svg().addTo(diagramDiv).viewbox(0, 0, w, h);
+    const pixels = image.flat();
+    const counts = kBins.map(color => {
+      return pixels.filter(v => v === color).length;
+    });
+    const max = counts.reduce((a, b) => Math.max(a, b));
+    const points = counts.map((count, i) => [
+        i * w / (counts.length - 1),
+        (1 - count / max) * h,
+    ]);
+    /*
+
+    |0  x  x  1  x  x 2|
+
+    */
+    const cps = [];
+    for (let i = 1; i < points.length; ++i) {
+      const p0 = points[i - 1];
+      const p1 = points[i];
+      cps.push([
+        lerp(p0[0], p1[0], 0.33), p0[1],
+        lerp(p0[0], p1[0], 0.66), p1[1],
+        ...p1,
+      ]);
+    }
+
+    draw.path([
+      ['M', 0, h],
+      ['L', ...points[0]],
+      ...cps.map(cp => ['C', ...cp]),
+      ['L', w, h],
+    ].flat().join(' ')
+    ).fill('white');
  },
   /*
    [ | | ] [ | | ]
@@ -1273,8 +1382,11 @@ renderDiagrams({
       code: `
         for (y = 0; y < size.y; y++) {
           for (x = 0; x < size.x; x++) {
-            color = textureLoad(ourTexture, vec2(x,y))
-            histogram[color] += 1
+            let position = vec2u(x, y);
+            let color = texLoad(ourTex, position, 0);
+            let v = srgbLuminance(color.rgb);
+            let bin = min(u32(v * numBins), lastBinIndex);
+            bins[bin] += 1;
           }
         }
       `,
@@ -1300,9 +1412,11 @@ renderDiagrams({
       chunksDown: 1,
       showImage: true,
       code: `
-        xy = glbl_inv_id
-        color = textureLoad(ourTexture, xy)
-        histogram[color] + 1
+        let position = global_invocation_id.xy;
+        let color = textureLoad(ourTexture, position, 0);
+        let v = srgbLuminance(color.rgb);
+        let bin = min(u32(v * numBins), lastBinIndex);
+        histogram[bin] += 1;
       `,
     });
   },
@@ -1319,7 +1433,7 @@ renderDiagrams({
       workGroupsLabel: '',
       bottomLabel: '',
       code: `
-        atomicAdd(&histogram[color], 1)
+        atomicAdd(&bin[color], 1)
       `,
     });
   },
@@ -1343,9 +1457,11 @@ renderDiagrams({
       chunksDown: 1,
       showImage: true,
       code: `
-        xy = gid.xy;
-        color = texLoad(ourTex, xy)
-        atomicAdd(&histogram[color], 1)
+        let position = global_invocation_id.xy;
+        let color = textureLoad(ourTexture, position, 0);
+        let v = srgbLuminance(color.rgb);
+        let bin = min(u32(v * numBins), lastBinIndex);
+        atomicAdd(&bins[bin], 1);
       `,
     });
   },
@@ -1380,6 +1496,8 @@ renderDiagrams({
       code: `
         xy = wid * chunkSize * lid;
         color = texLoad(ourTexture, xy)
+        v = srgbLuminance(color.rgb);
+        bin = min(u32(v * numBins), lastBinIndex);
         atomicAdd(&histogram[color], 1)
         wkBarrier();
         chunk = wid.y * chunksAcross + wid.x;

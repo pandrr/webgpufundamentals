@@ -14,6 +14,7 @@
   <body>
   </body>
   <script type="module">
+import TimingHelper from './resources/js/timing-helper.js';
 import {
   loadImageBitmap,
   createTextureFromSource,
@@ -21,16 +22,23 @@ import {
 
 async function main() {
   const adapter = await navigator.gpu?.requestAdapter();
-  const device = await adapter?.requestDevice();
+  const canTimestamp = adapter?.features.has('timestamp-query');
+  const device = await adapter?.requestDevice({
+    requiredFeatures: [
+      ...(canTimestamp ? ['timestamp-query'] : []),
+    ],
+  });
   if (!device) {
     fail('need a browser that supports WebGPU');
     return;
   }
 
+  const timingHelper = new TimingHelper(device);
+
   const module = device.createShaderModule({
     label: 'histogram shader',
     code: `
-      @group(0) @binding(0) var<storage, read_write> bins: array<u32>;
+      @group(0) @binding(0) var<storage, read_write> histogram: array<u32>;
       @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
       // from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
@@ -39,7 +47,7 @@ async function main() {
         return saturate(dot(color, kSRGBLuminanceFactors));
       }
 
-      @compute @workgroup_size(1) fn cs() {
+      @compute @workgroup_size(1, 1, 1) fn cs() {
         let size = textureDimensions(ourTexture, 0);
         let numBins = f32(arrayLength(&histogram));
         let lastBinIndex = u32(numBins - 1);
@@ -49,7 +57,7 @@ async function main() {
             let color = textureLoad(ourTexture, position, 0);
             let v = srgbLuminance(color.rgb);
             let bin = min(u32(v * numBins), lastBinIndex);
-            bins[bin] += 1;
+            histogram[bin] += 1;
           }
         }
       }
@@ -68,9 +76,8 @@ async function main() {
   const imgBitmap = await loadImageBitmap('resources/images/pexels-francesco-ungaro-96938-mid.jpg'); /* webgpufundamentals: url */
   const texture = createTextureFromSource(device, imgBitmap);
 
-  const numBins = 256;
   const histogramBuffer = device.createBuffer({
-    size: numBins * 4, // 256 entries * 4 bytes per (u32)
+    size: 256 * 4, // 256 entries * 4 bytes per (u32)
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
   });
 
@@ -88,17 +95,25 @@ async function main() {
     ],
   });
 
-  const encoder = device.createCommandEncoder({ label: 'histogram encoder' });
-  const pass = encoder.beginComputePass(encoder);
-  pass.setPipeline(pipeline);
-  pass.setBindGroup(0, bindGroup);
-  pass.dispatchWorkgroups(1);
-  pass.end();
+  const encoder = device.createCommandEncoder({
+    label: 'histogram encoder',
+  });
+  {
+    const pass = timingHelper.beginComputePass(encoder);
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(1);
+    pass.end();
+  }
 
   encoder.copyBufferToBuffer(histogramBuffer, 0, resultBuffer, 0, resultBuffer.size);
 
   const commandBuffer = encoder.finish();
   device.queue.submit([commandBuffer]);
+
+  timingHelper.getResult().then(duration => {
+    console.log('duration:', duration);
+  });
 
   await resultBuffer.mapAsync(GPUMapMode.READ);
   const histogram = new Uint32Array(resultBuffer.getMappedRange());
@@ -107,8 +122,6 @@ async function main() {
 
   const numEntries = texture.width * texture.height;
   drawHistogram(histogram, numEntries);
-
-  resultBuffer.unmap();
 }
 
 function drawHistogram(histogram, numEntries, height = 100) {

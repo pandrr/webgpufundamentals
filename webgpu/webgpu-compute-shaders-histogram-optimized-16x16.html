@@ -226,9 +226,6 @@ async function main() {
 
 function showImageBitmap(imageBitmap) {
   const canvas = document.createElement('canvas');
-
-  // we have to see the canvas size because of a firefox bug
-  // https://bugzilla.mozilla.org/show_bug.cgi?id=1850871
   canvas.width = imageBitmap.width;
   canvas.height = imageBitmap.height;
 
