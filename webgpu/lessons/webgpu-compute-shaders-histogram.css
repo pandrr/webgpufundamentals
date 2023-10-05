@@ -35,6 +35,7 @@
   width: 900px;
 }
 .histogram-img {
+  width: 256px;
   background-color: #777;
 }
 [data-diagram=colors] tbody,

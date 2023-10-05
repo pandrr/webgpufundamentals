@@ -600,7 +600,7 @@ for (y) {
 We could change the code use instead use `global_invocation_id.x` and `global_invocation_id.y`
 as inputs and then process every single pixel in a separate invocation.
 
-Here's needed the changes to the shader
+Here's the needed changes to the shader
 
 ```wgsl
 @group(0) @binding(0) var<storage, read_write> histogram: array<vec4u>;
@@ -621,12 +621,10 @@ fn srgbLuminance(color: vec3f) -> f32 {
 -  for (var y = 0u; y < size.y; y++) {
 -    for (var x = 0u; x < size.x; x++) {
 -      let position = vec2u(x, y);
-  var channels = textureLoad(ourTexture, position, 0);
-  channels.w = srgbLuminance(color.rgb);
-  for (var ch = 0; ch < 4; ch++) {
-    let bin = min(u32(channels[ch] * numBins), lastBinIndex);
-    histogram[bin][ch] += 1;
-  }
+  let color = textureLoad(ourTexture, position, 0);
+  let v = srgbLuminance(color.rgb);
+  let bin = min(u32(v * numBins), lastBinIndex);
+  bins[bin] += 1;
 -    }
 -  }
 }
@@ -636,7 +634,7 @@ As you can see, we got rid of the loop, instead we use the
 `@builtin(global_invocation_id)` value to make each workgroup
 responsible for a single pixel. Theoretically this would mean
 all of the pixels could be processed in parallel.
-Our image is 4896 x 3010 which is almost 15 million pixels so
+Our image is 2448 × 1505 which is almost 3.7 million pixels so
 there are lots of chances for parallelization.
 
 The only other change needed is to actually run one workgroup
@@ -658,8 +656,8 @@ Here it is running
 
 What's wrong? Why doesn't this histogram match the previous histogram
 and why don't the totals match? Note: your computer might get different
-results than mine. On mine, these are the histograms from the previous
-version on the left, and this version on the right
+results than mine. On mine, this is the histogram from the previous
+version on the top, and then 4 results from the new version on the bottom.
 
 <style>
 .local-img img {
@@ -667,25 +665,25 @@ version on the left, and this version on the right
   margin: 0.5em;
 }
 </style>
-<div class="webgpu_center side-by-side local-img">
-  <div style="display: flex; flex-direction: column">
-      <img src="resources/histogram-slow-color.png" class="histogram-img">
+<div class="webgpu_center local-img">
+  <div>
       <img src="resources/histogram-slow-luminosity.png" class="histogram-img">
-      <div style="text-align: center;">Previous</div>
+      <div style="text-align: center;">Previous Result</div>
   </div>
-  <div style="display: flex; flex-direction: column">
-      <img src="resources/histogram-race-color.png" class="histogram-img">
-      <img src="resources/histogram-race-luminosity.png" class="histogram-img">
-      <div style="text-align: center;">Current</div>
+  <div>
+    <div>
+        <img src="resources/histogram-race-01.png" class="histogram-img">
+        <img src="resources/histogram-race-02.png" class="histogram-img">
+    </div>
+    <div>
+        <img src="resources/histogram-race-03.png" class="histogram-img">
+        <img src="resources/histogram-race-04.png" class="histogram-img">
+    </div>
+    <div style="text-align: center;">New Results</div>
   </div>
 </div>
 
-Further, the totals don't match
-
-```text
-previous: -> total: (4) [14736960, 14736960, 14736960, 14736960]
-current:  -> total: (4) [75969, 69135, 72956, 58363]
-```
+Our new version gets inconsistent results (at least on my machine).
 
 What happened?
 
@@ -694,28 +692,29 @@ This is a classic *race condition* like we mentioned in [the previous article](.
 This line in our shader
 
 ```wgsl
-        histogram[bin][ch] += 1;
+        bins[bin] += 1;
 ```
 
 Actually translates to this
 
 ```wgsl
-   let value = histogram[bin][ch];
-   histogram[bin][ch] = value + 1;
+   let value = bins[bin];
+   bins[bin] = value + 1;
 ```
 
 What happens when 2 or more invocations are running in parallel
-and happen to have the same `bin` and `ch`.
+and happen to have the same `bin` value?
 
-Imagine 2 invocations, where in both `bin = 1` and `ch = 2` and
-`histogram[1][2] = 3`. If they run in parallel both invocations will load
+Imagine 2 invocations, where `bin = 1` and
+`bins[1] = 3`. If they run in parallel both invocations will load
 3 and both invocations will write 4, when the correct answer would be
 5.
 
 <div class="webgpu_center data-table">
   <style>
     .local-race th { text-align: center; }
-    .local-race .step { background-color: var(--table-line-head-bg); }
+    .local-race td { white-space: pre; }
+    .local-race .step { color: #969896; }
   </style>
   <div>
   <table class="local-race">
@@ -725,29 +724,20 @@ Imagine 2 invocations, where in both `bin = 1` and `ch = 2` and
     </thead>
     <tbody>
       <tr>
-        <td>value = histogram[bin][ch]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="step">// loads 3</span></td>
-        <td>value = histogram[bin][ch]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="step">// loads 3</span></td>
+        <td>value = bins[bin]     <span class="step">// loads 3</span></td>
+        <td>value = bins[bin]     <span class="step">// loads 3</span></td>
+      <tr>
+        <td>value = value + 1     <span class="step">// adds 1</span></td>
+        <td>value = value + 1     <span class="step">// adds 1</span></td>
       </tr>
       <tr>
-        <td>histogram[bin][ch] = value + 1 <span class="step">// stores 4</span></td>
-        <td>histogram[bin][ch] = value + 1 <span class="step">// stores 4</span></td>
+        <td>bins[bin] = value     <span class="step">// stores 4</span></td>
+        <td>bins[bin] = value     <span class="step">// stores 4</span></td>
       </tr>
     </tbody>
   </table>
   </div>
 </div>
-
-It's probably actually worse than that. `histogram` is defined as `array<vec4u>`. GPUs generally
-load an entire `vec4` of values at a time. That means if 2 or more invocations are writing to
-the same bin but different channels, they may still be stepping on each other.
-
-In other words, what's really happening in the code is this
-
-```wgsl
-   let value = histogram[bin];    // get the entire vec4 bin
-   value[ch] = value[ch] + 1;     // update a single channel of value locally
-   histogram[bin] = value;        // put back the entire bin, all 4 channels worth.
-```
 
 You can see the problem visually in the diagram below. You'll see several invocations
 go and fetch the current value in the bin, add one to it, and put it back, each of
@@ -767,8 +757,8 @@ atomic functions have the requirement that they only work on
 Here's the changes to our shaders
 
 ```wgsl
--@group(0) @binding(0) var<storage, read_write> histogram: array<vec4u>;
-+@group(0) @binding(0) var<storage, read_write> histogram: array<array<atomic<u32>, 4>>;
+-@group(0) @binding(0) var<storage, read_write> bins: array<u32>;
++@group(0) @binding(0) var<storage, read_write> bins: array<atomic<u32>>;
 @group(0) @binding(1) var ourTexture: texture_2d<f32>;
 
 const kSRGBLuminanceFactors = vec3f(0.2126, 0.7152, 0.0722);
@@ -779,16 +769,13 @@ fn srgbLuminance(color: vec3f) -> f32 {
 @compute @workgroup_size(1, 1, 1)
 fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
   let position = global_invocation_id.xy;
-  let numBins = f32(arrayLength(&histogram));
+  let numBins = f32(arrayLength(&bins));
   let lastBinIndex = u32(numBins - 1);
   let color = textureLoad(ourTexture, position, 0);
-  let luminance = srgbLuminance(color.rgb);
-  for (var ch = 0; ch < 4; ch++) {
-    let v = select(color[ch], luminance, ch == 3);
-    let ndx = min(u32(v * numBins), lastBinIndex);
--    histogram[bin][ch] += 1;
-+    atomicAdd(&histogram[ndx][ch], 1u);
-  }
+  let v = srgbLuminance(color.rgb);
+  let bin = min(u32(v * numBins), lastBinIndex);
+-  bins[bin] += 1;
++  atomicAdd(&bins[bin], 1u);
 }
 ```
 
@@ -803,28 +790,38 @@ but when an invocation is doing an `atomicAdd` it "locks the bin"
 so that another invocation has to wait until it's done.
 
 <div class="webgpu_center compute-diagram">
-  <div>Two workgroups, one locking the blue bin, the other blocked from using the same blue bin</div>
+  <div>Two workgroups, one locking the bottom bin, the other blocked from using the same bottom bin</div>
   <div data-diagram="lockedBin"></div>
 </div>
 
-When
-an invocation is locking a bin it will have a line from the invocation
-to the bin in the color of the bin. Invocations that are waiting for
-that bin to unlock will have a stop sign on them.
+In the diagrams, when an invocation is locking a bin it will have a line from the invocation to
+the bin in the color of the bin. Invocations that are waiting for that bin to
+unlock will have a stop sign on them.
 
 <div class="webgpu_center compute-diagram"><div data-diagram="noRace"></div></div>
+
+In my machine, this new version runs at around 4x faster than JavaScript though YMMV.
 
 ## Workgroups
 
 Can we go faster? As mentioned in [the previous article](../webgpu-compute-shaders.html),
-the "workgroup" is the smallest unit of work we can ask the GPU can do. You define the size of a workgroup
-in 3 dimensions, and then you call `dispatchWorkgroups` to run a bunch of these workgroups.
+the "workgroup" is the smallest unit of work we can ask the GPU can do. You define the size
+of a workgroup in 3 dimensions when you create the shader model, 
+and then you call `dispatchWorkgroups` to run a bunch of these workgroups.
 
 Workgroups can share internal storage and coordinate that storage with in the workgroup
 itself. How could we take advantage of that fact?
 
-Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations). We'll have
-each invocation work on at 256x1 section of the image. This will make it
+Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations per workgroup).
+We'll have each invocation work on at 256x1 section of the image. This will mean
+we will have `Math.ceil(texture.width / 256) * texture.height` workgroups.
+
+We'll have the invocations within the workgroup use workgroup storage to sum up the
+luminance values into bins.
+
+Finally we'll copy the workgroup memory into for each workgroup, into it's own "chunk".
+When were done, we'll run another compute shader to sum up the chunks.
+
 
 
 

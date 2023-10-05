@@ -537,10 +537,6 @@ function makeComputeDiagram(elem, {
           .fill(hsl(1 / 12 + id * 0.1, 0.7, lerp(0.4, 0.8, id / 2)))
           .stroke({width: 0.5})
           .hide();
-      const lockLine = group
-          .line(0, 0, 1, 1)
-          .stroke({color: 'red', width: size / 4})
-          .hide();
       const lockStop = group.image('/webgpu/lessons/resources/stop.svg').size(size, size).move((kWidth - size) / 2, belowCodeLinesY + size * 0.125).hide();
       const barrier = group.image('/webgpu/lessons/resources/barrier.svg').size(size, size).move((kWidth - size) / 2, belowCodeLinesY + size * 0.125).hide();
       const fetchHandle = group.group().transform({translateX: kWidth / 2, translateY: belowCodeLinesY + size * 0.75});
@@ -548,7 +544,7 @@ function makeComputeDiagram(elem, {
       plus.rect(size / 6, size / 2).center(kWidth / 2, belowCodeLinesY + size * 0.625);
       plus.rect(size / 2, size / 6).center(kWidth / 2, belowCodeLinesY + size * 0.625);
       plus.hide();
-      return {
+      const inv = {
         group,
         color,
         bin,
@@ -556,7 +552,6 @@ function makeComputeDiagram(elem, {
         fetchHandle,
         header,
         lock,
-        lockLine,
         lockStop,
         barrier,
         plus,
@@ -576,11 +571,12 @@ function makeComputeDiagram(elem, {
           instructions.forEach(i => i.text('-'));
           lock.hide();
           lockStop.hide();
-          lockLine.hide();
+          inv.lockLine.hide();
           barrier.hide();
           plus.hide();
         },
       };
+      return inv;
     }
 
     function* setInstructions(instructionGroup, instructions, text, duration) {
@@ -596,6 +592,14 @@ function makeComputeDiagram(elem, {
         const invocation = createInvocation(group, size, i);
         invocation.group.transform({translateX: size * 0.25, translateY: i * kInvocationDrawHeight});
         invocations.push(invocation);
+      }
+      // need to create lockLine after so it's not masked by invocations
+      for (const invocation of invocations) {
+        invocation.lockLine = group
+            .line(0, 0, 1, 1)
+            .stroke({color: 'red', width: size / 4})
+            .hide();
+
       }
       const workgroup = {
         group,
@@ -850,8 +854,8 @@ function makeComputeDiagram(elem, {
             storageBinLocked[binNdx] = true;
             storageBin.lock.show();
             {
-              const toInvocation = getTransformToElement(invocation.group.node, storageBin.group.node);
-              const toBin = getTransformToElement(invocation.group.node, invocation.bin.node);
+              const toInvocation = getTransformToElement(workgroup.group.node, storageBin.group.node);
+              const toBin = getTransformToElement(workgroup.group.node, invocation.bin.node);
               const p2 = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
               const p1 = new DOMPoint(0, 0).matrixTransform(toBin);
               const color = binNdxToBinColor[binNdx];
@@ -993,8 +997,8 @@ function makeComputeDiagram(elem, {
               case 0: {
                 storageBin.lock.show();
                 {
-                  const toInvocation = getTransformToElement(invocation.group.node, storageBin.group.node);
-                  const toBin = getTransformToElement(invocation.group.node, invocation.bin.node);
+                  const toInvocation = getTransformToElement(workgroup.group.node, storageBin.group.node);
+                  const toBin = getTransformToElement(workgroup.group.node, invocation.bin.node);
                   const p2 = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
                   const p1 = new DOMPoint(0, 0).matrixTransform(toBin);
                   invocation.lockLine
@@ -1044,8 +1048,8 @@ function makeComputeDiagram(elem, {
             const binPosition = getBinPosition(draw, workgroupBin, size);
             workgroupBin.lock.show();
             {
-              const toInvocation = getTransformToElement(invocation.group.node, workgroupBin.group.node);
-              const toBin = getTransformToElement(invocation.group.node, invocation.bin.node);
+              const toInvocation = getTransformToElement(workgroup.group.node, workgroupBin.group.node);
+              const toBin = getTransformToElement(workgroup.group.node, invocation.bin.node);
               const p2 = new DOMPoint(size / 2, size / 2).matrixTransform(toInvocation);
               const p1 = new DOMPoint(0, 0).matrixTransform(toBin);
               const color = binNdxToBinColor[binNdx];
