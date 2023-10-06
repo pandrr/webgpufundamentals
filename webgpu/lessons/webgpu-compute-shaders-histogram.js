@@ -64,6 +64,16 @@ function srgbLuminance(data, r, g, b) {
          b * 0.0722;
 }
 
+function shuffle(a) {
+  const b = a.slice();
+  for (let i = b.length - 1; i > 1; --i) {
+    const j = Math.random() * i | 0;
+    const t = b[i];
+    b[i] = b[j];
+    b[j] = t;
+  }
+  return b;
+}
 
 const imgChunkData = [];
 
@@ -1535,6 +1545,88 @@ renderDiagrams({
         chunks[0][bin] = sum;
       `,
     });
+  },
+  reduceDiagram(elem) {
+    const diagramDiv = el('div');
+    const uiDiv = el('div');
+    const div = el('div', {}, [diagramDiv, uiDiv]);
+    elem.appendChild(div);
+    /*
+
+     0   1   2   3   4   5   6   7   8  9   10  11  12
+     -------------------------------------------------------
+     1   2   3   4   5   6   7   8   9  10  11  12  13   // 2
+     3       7       11      15      19     23      13   // 4
+     10              26              42             13   // 8
+     36                              55                  // 16
+     99                                                  // 32
+    */
+    const numbers = shuffle(range(13, i => i + 1));
+    const unitsAcross = numbers.length * 2 - 1;
+    const steps = 1 + Math.ceil(Math.log2(numbers.length));
+    const unitsDown = steps * 2 - 1;
+    const size = 16;
+    const draw = svg().addTo(diagramDiv).viewbox(0, 0, size * unitsAcross, unitsDown * size);
+
+    const iMarker = draw.marker(16, 8, function(add) {
+      add.polygon([0, 0, 8, 4, 0, 8]).fill('gray').attr({orient: 'auto'});
+    });
+
+    function drawCell(x, y, num, color) {
+      draw.rect(size, size).move(x, y).fill(color);
+      makeText(draw, num.toString()).font({anchor: 'middle'}).center(x + size / 2, y + size / 2);
+    }
+
+    function drawCurvyArrow(x0, y0, x1, y1) {
+      return draw.path([
+        ['M', x0, y0],
+        ['C',
+          lerp(x0, x1, 0.2), lerp(y0, y1, 1),
+          lerp(x0, x1, 0.8), lerp(y0, y1, -1),
+          x1, y1,
+        ],
+      ].flat().join(' '));
+    }
+
+    function drawConnection(x2, y2, i, step, stride) {
+      if (step > 0) {
+        const x0 = x2;
+        const y0 = (step - 1) * 2 * size;
+        const x1 = x0 + stride / 2 * size;
+
+        if (i + stride / 4 < numbers.length) {
+          drawCurvyArrow(x0 + size * 0.5, y0 + size, x2 + size * 0.5, y2).fill('none').stroke('gray').marker('end', iMarker);
+          drawCurvyArrow(x1 + size * 0.5, y0 + size, x2 + size * 0.8, y2).fill('none').stroke('gray').marker('end', iMarker);
+        } else {
+          drawCurvyArrow(x0 + size * 0.5, y0 + size, x2 + size * 0.5, y2).fill('none').stroke('gray').marker('end', iMarker);
+        }
+      }
+    }
+
+    for (let step = 0; step < steps; ++step) {
+      const color = hsl(step / steps * 0.2, 0.7, 0.5);
+      const stride = 2 ** (step + 1);
+      console.log(stride);
+
+/*
+      13 (2)                   12    6
+      13 (4)                   10    0 4 8
+*/
+      for (let i = 0; i < numbers.length; i += stride) {
+        const ndx = i + stride / 2;
+        const x2 = i * 2 * size;
+        const y2 = step * 2 * size;
+        drawCell(x2, y2, numbers[i], color);
+        drawConnection(x2, y2, i, step, stride);
+
+        if (ndx < numbers.length) {
+          const x3 = ndx * 2 * size;
+          drawCell(x3, y2, numbers[ndx], color);
+          numbers[i] += numbers[i + stride / 2];
+          drawConnection(x3, y2, i + stride / 2, step, stride);
+        }
+      }
+    }
   },
   reduce(elem) {
     makeComputeDiagram(elem, {

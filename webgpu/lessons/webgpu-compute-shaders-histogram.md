@@ -831,6 +831,12 @@ chunks
 sum
 <div class="webgpu_center compute-diagram"><div data-diagram="sum"></div></div>
 
+
+reduce-diagram
+<div class="webgpu_center compute-diagram"><div data-diagram="reduceDiagram"></div></div>
+
+
+
 reduce
 <div class="webgpu_center compute-diagram"><div data-diagram="reduce"></div></div>
 
