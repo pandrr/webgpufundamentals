@@ -235,7 +235,7 @@ async function main() {
 
   const encoder = device.createCommandEncoder({ label: 'histogram encoder' });
 
-  // create a histogram for each area
+  // create a histogram for each chunk
   {
     const pass = encoder.beginComputePass(encoder);
     pass.setPipeline(histogramChunkPipeline);
@@ -244,7 +244,7 @@ async function main() {
     pass.end();
   }
 
-  // reduce the areas
+  // reduce the chunks
   {
     const pass = encoder.beginComputePass(encoder);
     pass.setPipeline(chunkSumPipeline);

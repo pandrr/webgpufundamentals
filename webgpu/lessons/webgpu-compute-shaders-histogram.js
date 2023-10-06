@@ -6,7 +6,7 @@ import {
 } from './resources/good-raf.js';
 import { SVG as svg } from '/3rdparty/svg.esm.js';
 import {
-  createElem as el, select, radio, checkbox, makeTable,
+  createElem as el, select, makeTable,
 } from './resources/elem.js';
 import { clamp01, hsl, lerp, rgba, rgba8unormFromCSS } from './resources/utils.js';
 
@@ -48,12 +48,11 @@ const unicodeColorsToCSS = {
   '⬜️': 'white',
 };
 
-const unicodeBinColorsToCSS = {
-  '🟥': '#800',
-  '🟨': '#880',
-  '🟦': '#008',
-};
-
+// const unicodeBinColorsToCSS = {
+//   '🟥': '#800',
+//   '🟨': '#880',
+//   '🟦': '#008',
+// };
 
 // Returns a value from 0 to 1 for luminance.
 // where r, g, b each go from 0 to 1.
@@ -171,16 +170,16 @@ const setTranslation = (e, x, y) => e.attr({transform: `translate(${x}, ${y})`})
 const range = (n, fn) => new Array(n).fill(0).map((_, v) => fn(v));
 const sineOut = t => 1 - Math.cos(t * Math.PI * 0.5);
 
-const darkColors = {
-  main: '#fff',
-  point: '#80DDFF80',
-};
-const lightColors = {
-  main: '#000',
-  point: '#8000FF20',
-};
-const darkMatcher = window.matchMedia('(prefers-color-scheme: dark)');
-let colorScheme;
+//const darkColors = {
+//  main: '#fff',
+//  point: '#80DDFF80',
+//};
+//const lightColors = {
+//  main: '#000',
+//  point: '#8000FF20',
+//};
+//const darkMatcher = window.matchMedia('(prefers-color-scheme: dark)');
+// let colorScheme;
 
 class CoroutineManager {
   #stepCount = 0;
@@ -336,8 +335,8 @@ const getBinPosition = (draw, bin, size) => {
 };
 
 const updateColorScheme = () => {
-  const isDarkMode = darkMatcher.matches;
-  colorScheme = isDarkMode ? darkColors : lightColors;
+  //const isDarkMode = darkMatcher.matches;
+  //colorScheme = isDarkMode ? darkColors : lightColors;
   //hLine.stroke(colorScheme.main);
   //vLine.stroke(colorScheme.main);
   //marker.fill(colorScheme.main);
@@ -359,6 +358,7 @@ function makeComputeDiagram(elem, {
   workGroupsLabel = 'workgroups',
   bottomLabel = 'bins',
   numLinesVisible,
+  showColorBin = true,
   code = '',
 }) {
   const diagramDiv = el('div');
@@ -366,7 +366,6 @@ function makeComputeDiagram(elem, {
   const div = el('div', {}, [diagramDiv, uiDiv]);
   elem.appendChild(div);
 
-  let elapsedTime = 0;
   let deltaTime = 0;
   let speed = 1;
   let playing = true;
@@ -385,7 +384,6 @@ function makeComputeDiagram(elem, {
   let diagram = createComputeDiagram();
 
   const reset = () => {
-    elapsedTime = 0;
     deltaTime = 0;
     diagram.close();
     diagram = createComputeDiagram();
@@ -415,7 +413,6 @@ function makeComputeDiagram(elem, {
   const update = (now) => {
     now *= 0.001;
     deltaTime = Math.min(0.1, now - then);
-    elapsedTime += deltaTime;
     then = now;
     diagram.update();
   };
@@ -468,16 +465,16 @@ function makeComputeDiagram(elem, {
       yield lerpStep(_ => _, duration);
     }
 
-    function* scrollText(instructionGroup, instructions, text, duration = 0.5) {
-      instructions[1].text(text);
-      yield lerpStep(t => {
-        const y = lerp(0, -8, sineOut(t));
-        instructionGroup.transform({translateY: y});
-      }, duration);
-      instructions[0].text(text);
-      instructions[1].text('');
-      instructionGroup.transform({translateY: 0});
-    }
+    // function* scrollText(instructionGroup, instructions, text, duration = 0.5) {
+    //   instructions[1].text(text);
+    //   yield lerpStep(t => {
+    //     const y = lerp(0, -8, sineOut(t));
+    //     instructionGroup.transform({translateY: y});
+    //   }, duration);
+    //   instructions[0].text(text);
+    //   instructions[1].text('');
+    //   instructionGroup.transform({translateY: 0});
+    // }
 
     function* goToLine(instructionsGroup, prgCursor, lineNo, duration = 0.5) {
       prgCursor.show();
@@ -540,6 +537,10 @@ function makeComputeDiagram(elem, {
       //  weight: 'bold',
       //  size: '8',
       //}).move(0, -2).fill('rgba(0, 0, 0, 0.5)');
+      if (!showColorBin) {
+        bin.hide();
+        color.hide();
+      }
       setTranslation(text, kWidth / 2 + size * 0, belowCodeLinesY + size * (0.75));
       const lock = group
           .polygon([[0, 0], [1, 0], [1, 1], [0, 1]])
@@ -589,7 +590,7 @@ function makeComputeDiagram(elem, {
       return inv;
     }
 
-    function* setInstructions(instructionGroup, instructions, text, duration) {
+    function* setInstructions(/*instructionGroup, instructions, text, duration*/) {
       coMgr.addStep();
       //yield scrollText(instructionGroup, instructions, text, duration);
     }
@@ -712,7 +713,7 @@ function makeComputeDiagram(elem, {
     let activeWorkgroupCount = 0;
     let uniformStride = 0;
 
-    workGroups.forEach((workgroup, workgroupId) => {
+    workGroups.forEach((workgroup/*, workgroupId*/) => {
       const workForCores = [];
       const workgroupStorage = new Array(kWaveSize).fill(0);
       let activeInvocationCount = 0;
@@ -729,16 +730,16 @@ function makeComputeDiagram(elem, {
         --workgroupBarrierCount;
       }
 
-      workgroup.invocations.map((invocation, id) => {
+      workgroup.invocations.map((invocation/*, id*/) => {
         const toInvocation = getTransformToElement(draw.node, invocation.fetchHandle.node);
         const toColor = getTransformToElement(draw.node, invocation.color.node);
-        const toBin = getTransformToElement(draw.node, invocation.bin.node);
+        //const toBin = getTransformToElement(draw.node, invocation.bin.node);
         const toText = getTransformToElement(draw.node, invocation.text.node);
         const invPoint = new DOMPoint(0, 0).matrixTransform(toInvocation);
         // why doesn't this work?
         const colorPoint = new DOMPoint(0, 0).matrixTransform(toColor);
         const numPoint = new DOMPoint(0, 0).matrixTransform(toText);
-        const binPoint = new DOMPoint(0, 0).matrixTransform(toBin);
+        //const binPoint = new DOMPoint(0, 0).matrixTransform(toBin);
 
         const ig = draw.group();
         const sx = invPoint.x;
@@ -747,8 +748,8 @@ function makeComputeDiagram(elem, {
         const numY = numPoint.y - 3;
         const colX = colorPoint.x;
         const colY = colorPoint.y;
-        const binX = binPoint.x;
-        const binY = binPoint.y;
+        //const binX = binPoint.x;
+        //const binY = binPoint.y;
 
         let ex = sx;
         let ey = sy;
@@ -832,10 +833,10 @@ function makeComputeDiagram(elem, {
           rect.hide();
         }
 
-        function* doOne(tx, ty, useBarrier, inLoop) {
+        function* doOne(tx, ty, useBarrier) {
           // read texture
           const texel = image[ty][tx];
-          const color = unicodeColorsToCSS[texel];
+          //const color = unicodeColorsToCSS[texel];
           yield invocation.advanceLine();
           yield textureLoad(tx, ty, texel);
           const binNdx = texelColorToBinNdx[texel];
@@ -1535,7 +1536,9 @@ renderDiagrams({
       chunksDown: 2,
       showImage: false,
       useImageData: true,
+      workGroupsLabel: 'single workgroup',
       bottomLabel: 'chunks',
+      showColorBin: false,
       code: `
         sum = 0
         bin = lid.x;
@@ -1567,8 +1570,8 @@ renderDiagrams({
     const size = 16;
     const strideSpace = size * 3.5;
     const unitsDown = steps * 2 - 1;
-    const draw = svg().addTo(diagramDiv).viewbox(0, 0, size * unitsAcross + strideSpace, unitsDown * 1.25 * size);
-    const bins = draw.group().transform({translateX: strideSpace});
+    const draw = svg().addTo(diagramDiv).viewbox(0, 0, size * (unitsAcross + 2) + strideSpace, unitsDown * 1.25 * size);
+    const bins = draw.group().transform({translateX: size + strideSpace});
 
     const iMarker = bins.marker(16, 8, function(add) {
       add.polygon([0, 0, 8, 4, 0, 8]).fill('gray').attr({orient: 'auto'});
@@ -1610,7 +1613,7 @@ renderDiagrams({
       const stride = 2 ** step;
       const y2 = step * 2.5 * size;
 
-      draw.text(`stride: ${stride}`).move(0, y2 - size / 3).font({
+      draw.text(`stride: ${stride}`).move(size, y2 - size / 3).font({
         family: 'monospace',
         size: '8',
       })
@@ -1642,6 +1645,7 @@ renderDiagrams({
       showImage: false,
       useImageData: true,
       bottomLabel: 'chunks',
+      showColorBin: false,
       code: `
         sum = 0
         bin = lid.x;

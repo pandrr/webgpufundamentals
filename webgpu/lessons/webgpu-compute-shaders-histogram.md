@@ -243,7 +243,7 @@ async function main() {
 
 And here's the image histogram.
 
-<!-- {{{example url="../webgpu-compute-shaders-histogram-javascript.html"}}} -->
+{{{example url="../webgpu-compute-shaders-histogram-javascript.html"}}}
 
 Hopefully it was easy to follow what the JavaScript code is doing.
 Let's convert it to WebGPU!
@@ -542,7 +542,7 @@ to draw the histogram
 
 And it should work
 
-<!-- {{{example url="../webgpu-compute-shaders-histogram-slow-draw-in-js.html"}}} -->
+{{{example url="../webgpu-compute-shaders-histogram-slow.html"}}}
 
 Timing the results I found **this is about 30x slower than the JavaScript version!!!** 😱😱😱
 
@@ -652,7 +652,7 @@ per pixel.
 
 Here it is running
 
-<!-- {{{example url="../webgpu-compute-shaders-histogram-with-race.html"}}} -->
+{{{example url="../webgpu-compute-shaders-histogram-with-race.html"}}}
 
 What's wrong? Why doesn't this histogram match the previous histogram
 and why don't the totals match? Note: your computer might get different
@@ -781,7 +781,7 @@ fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
 
 With that our compute shader, that uses 1 workgroup invocation per pixel, works!
 
-<!-- {{{example url="../webgpu-compute-shaders-histogram-race-fixed.html"}}} -->
+{{{example url="../webgpu-compute-shaders-histogram-race-fixed.html"}}}
 
 Unfortunately we have a new problem. `atomicAdd` effectively needs to block
 another invocation from updating the same bin at the same time. We can see
@@ -886,7 +886,7 @@ We can no longer lookup the size because we don't pass in a buffer for
 `var<workgroup>` like we did for `var<storage>`. Its size is defined when
 we create the shader module.
 
-Finely most different part of the shader.
+Finally the most different part of the shader.
 
 ```wgsl
   workgroupBarrier();
@@ -1019,7 +1019,7 @@ If we ran this shader it would work something like this:
 <div class="webgpu_center compute-diagram"><div data-diagram="chunks"></div></div>
 
 Above you can see each workgroup read one chunk's worth of pixels and update the bins
-accordingly. Just like before, if 2 invocation need to update the same bin one of them
+accordingly. Just like before, if 2 invocations need to update the same bin one of them
 will have to wait 🛑. Afterwords they all wait for each other at the `workgroupBarrier`
 🚧. After that each invocation copies its bin to the corresponding bin in the chunk
 it's working on.
@@ -1196,6 +1196,8 @@ with happens to use 256 invocations.
 
 The rest of the code is the same.
 
+{{{example url="../webgpu-compute-shaders-histogram-optimized.html"}}}
+
 Timing this on my machine I was happy to see the first shader runs in 0.2ms!
 It read the entire image and filled out all the chunks lickety-split!
 
@@ -1260,32 +1262,100 @@ const chunkSumModule = device.createShaderModule({
 ```
 
 You can see above, we compute a `chunk0` and `chunk1` based on the `workgroup_id.x`
-and `uni.stride` that we pass in as a uniform.
+and `uni.stride` that we pass in as a uniform. We then just add the 2 bins from
+the 2 chunks and store them back the first.
 
 If we run it with the correct number of invocations and stride settings it will
 operate something like this
 
 <div class="webgpu_center compute-diagram"><div data-diagram="reduce"></div></div>
 
+To make this new one work we need to add a uniform buffer for each stride value
+as well as a bindGroup.
 
+```js
+const sumBindGroups = [];
+const numSteps = Math.ceil(Math.log2(numChunks));
+for (let i = 0; i < numSteps; ++i) {
+  const stride = 2 ** i;
+  const uniformBuffer = device.createBuffer({
+    size: 4,
+    usage: GPUBufferUsage.UNIFORM,
+    mappedAtCreation: true,
+  });
+  new Uint32Array(uniformBuffer.getMappedRange()).set([stride]);
+  uniformBuffer.unmap();
 
+  const chunkSumBindGroup = device.createBindGroup({
+    layout: chunkSumPipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: histogramChunksBuffer }},
+      { binding: 1, resource: { buffer: uniformBuffer }},
+    ],
+  });
+  sumBindGroups.push(chunkSumBindGroup);
+}
+```
 
+Then we just need to call these with the correct number of
+dispatches until we've reduced things to 1 chunk
 
+```js
+-  // sum the areas
+-  {
+-    const pass = encoder.beginComputePass();
+-    pass.setPipeline(chunkSumPipeline);
+-    pass.setBindGroup(0, chunkSumBindGroup);
+-    pass.dispatchWorkgroups(1);
+-    pass.end();
+-  }
++  // reduce the chunks
++  {
++    const pass = encoder.beginComputePass(encoder);
++    pass.setPipeline(chunkSumPipeline);
++    let chunksLeft = numChunks;
++    sumBindGroups.forEach(bindGroup => {
++      pass.setBindGroup(0, bindGroup);
++      const dispatchCount = Math.floor(chunksLeft / 2);
++      chunksLeft -= dispatchCount;
++      pass.dispatchWorkgroups(dispatchCount);
++    });
++    pass.end();
++  }
+```
 
+{{{example url="../webgpu-compute-shaders-histogram-optimized.html"}}}
 
-# M1
+Timing this version I got under 1ms on both machines I tested! 🎉🚀
 
-* JavaScript: 43ms ???
-* Compute Shader: 1 workgroup 1x1x1 : 1500ms
-* Compute Shader: 1 workgroup per pixel : 12ms
-* 256x1 + sum = 12.5ms
-* 256x1 + reduce = 1em
+There may be a faster way to compute a histogram. It might also be better
+to try different chunk sizes. Maybe 16x16 is better than 256x1.
+Also, at some point WebGPU will likely support *subgroups* which is
+yet another whole topic and an area for even more optimization.
 
+For now I hope these steps have given you some ideas on how to write
+and optimize a compute shader. The takeaways are:
 
+* Find a way to use all of the parallelization the GPU provides
+* Be aware of race conditions
+* Use `var<workgroup>` to create storage shared between all invocations of a workgroup
+* Try to design algorithms that require less coordination between invocations.
 
-* Cleanup drawHistogram (we don't need totals or max?)
-* Write Timing Article and add Timing?
-* Fix totals
+  We did so-so on this front. When computing our chunks in workgroup memory
+  we still have conflicts which we resolved via `atomicAdd` but we have no
+  conflicts when copying from the `bins` in the workgroup into the `chunks`
+  and we have no conflicts when we reduce the `chunks` to one final result
+
+Maybe one more
+
+* Don't assume the GPU is fast.
+
+  We learned individual cores of a GPU are not so fast. 
+
+In [the next article](webgpu-compute-shaders-histogram-part-2.html) we'll
+tweak these a little as well as change it so we
+graph the results using the CPU instead of pulling them back to JavaScript.
+We'll even try some real time video adjustments.
 
 <!-- keep this at the bottom of the article -->
 <link rel="stylesheet" href="webgpu-compute-shaders-histogram.css">
