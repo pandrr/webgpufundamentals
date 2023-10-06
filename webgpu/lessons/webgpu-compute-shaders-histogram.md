@@ -806,15 +806,15 @@ In my machine, this new version runs at around 4x faster than JavaScript though 
 
 Can we go faster? As mentioned in [the previous article](../webgpu-compute-shaders.html),
 the "workgroup" is the smallest unit of work we can ask the GPU can do. You define the size
-of a workgroup in 3 dimensions when you create the shader model, 
+of a workgroup in 3 dimensions when you create a shader module, 
 and then you call `dispatchWorkgroups` to run a bunch of these workgroups.
 
 Workgroups can share internal storage and coordinate that storage with in the workgroup
 itself. How could we take advantage of that fact?
 
 Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations per workgroup).
-We'll have each invocation work on at 256x1 section of the image. This will mean
-we will have `Math.ceil(texture.width / 256) * texture.height` workgroups.
+We'll have each invocation work on a 256x1 section of the image. This will mean
+we will have `Math.ceil(texture.width / 256) * texture.height` total workgroups.
 
 We'll have the invocations within the workgroup use workgroup storage to sum up the
 luminance values into bins.
@@ -822,26 +822,456 @@ luminance values into bins.
 Finally we'll copy the workgroup memory into for each workgroup, into it's own "chunk".
 When were done, we'll run another compute shader to sum up the chunks.
 
+Let's edit our shader. First we'll change our `bins` from type `storage` to
+type `workgroup` so he'll only be shared with invocations in the same workgroup
+
+```wgsl
+-@group(0) @binding(0) var<storage, read_write> bins: array<atomic<u32>>;
++const chunkWidth = 256;
++const chunkHeight = 1;
++const chunkSize = chunkWidth * chunkHeight;
++var<workgroup> bins: array<atomic<u32>, chunkSize>;
+```
+
+Above we declared some constants so we can easily change them.
+
+Then we need storage for all of our chunks
+
+```wgsl
++@group(0) @binding(0) var<storage, read_write> chunks: array<array<u32, chunkSize>>;
+@group(0) @binding(1) var ourTexture: texture_2d<f32>;
+
+const kSRGBLuminanceFactors = vec3f(0.2126, 0.7152, 0.0722);
+fn srgbLuminance(color: vec3f) -> f32 {
+  return saturate(dot(color, kSRGBLuminanceFactors));
+}
+```
+
+We can use our constants to define our workgroup size
+
+```wsgl
+-@compute @workgroup_size(1, 1, 1)
++@compute @workgroup_size(chunkWidth, chunkHeight, 1)
+```
+
+The main part that increments the bins is very similar to our
+previous shader.
+
+```wgsl
+fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
+  let size = textureDimensions(ourTexture, 0);
+  let position = global_invocation_id.xy;
++  if (all(position < size)) {
+-    let numBins = f32(arrayLength(&bins));
++    let numBins = f32(chunkSize);
+    let lastBinIndex = u32(numBins - 1);
+    let color = textureLoad(ourTexture, position, 0);
+    let v = srgbLuminance(color.rgb);
+    let bin = min(u32(v * numBins), lastBinIndex);
+    atomicAdd(&bins[bin], 1u);
+  }
+```
+
+Because our chunk size is hardcoded into the shader we don't want to work
+pixels outside of our texture. So for example if our image was 300 pixels
+wide, the first workgroup would work on pixels 0 to 255. The second workgroup
+would work on pixels 256 to 511. But we only need work to pixel 299.
+This is what the `if(all(position < size))` does. both `position` and `size` are
+`vec2u` and so `position < size` will produce 2 boolean values which is a`vec2<bool>`.
+the `all` function returns `true` if all of its inputs are true. So, the code
+will only go inside the if if `position.x < size.x` and `position.y < size.y`.
+
+As for `numBins`, we have as many bins as we defined for the chunk size.
+We can no longer lookup the size because we don't pass in a buffer for
+`var<workgroup>` like we did for `var<storage>`. Its size is defined when
+we create the shader module.
+
+Finely most different part of the shader.
+
+```wgsl
+  workgroupBarrier();
+
+  let chunksAcross = (size.x + chunkWidth - 1) / chunkWidth;
+  let chunkDim = vec2u(chunkWidth, chunkHeight);
+  let chunkPos = global_invocation_id.xy / chunkDim;
+  let chunk = chunkPos.y * chunksAcross + chunkPos.x;
+  let binPos = global_invocation_id.xy % chunkDim;
+  let bin = binPos.y * chunkWidth + binPos.x;
+
+  chunks[chunk][bin] = atomicLoad(&bins[bin]);
+}
+```
+
+This part just has each invocation copy one bin to the corresponding bin
+of a specific chunk, the chunk being worked on by this workgroup.
+Some of the calculations where are to convert `global_invocation_id`
+into both a `chunkPos` and a `binPos`. Those values are effectively
+the `workgroup_id` and `local_invocation_id` so we could simplify
+this code to
+
+```wgsl
+  workgroupBarrier();
+
+  let chunksAcross = (size.x + chunkWidth - 1) / chunkWidth;
+  let chunk = workgroup_id.y * chunksAcross + workgroup_id.x;
+  let bin = local_invocation_id.y * chunkWidth + local_invocation_id.x;
+
+  chunks[chunk][bin] = atomicLoad(&bins[bin]);
+}
+```
+
+We'd then need to add `workgroup_id` and `local_invocation_id` as inputs
+to the shader function
+
+```wgsl
+-fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
++fn cs(
++  @builtin(global_invocation_id) global_invocation_id: vec3u,
++  @builtin(workgroup_id) workgroup_id: vec3u,
++  @builtin(local_invocation_id) local_invocation_id: vec3u,
++) {
+
+  ...
+```
+
+## <a id="a-workgroup-barrier"></a>workgroupBarrier
+
+The `workgroupBarrier()` effectively says "stop here until all invocations
+in this workgroup reach this point. We need this because each invocation
+is updating different elements in `bins` but afterward, each invocation
+will copy just one element from `bins` to the correspond element in
+one of the `chunks` so we need to make sure all other invocations are done.
+
+To say this another way, any invocation can `atomicAdd` any element in `bins`
+depending on what color it reads from the texture. But, only
+`local_invocation_id` = 3,0 will copy `bin[3]` to `chunks[chunk][3]` so it
+has to wait for all other invocations to have their chance to update `bin[3]`
 
 
+Putting it all together here is our new shader
 
-chunks
+```wgsl
+const chunkWidth = 256;
+const chunkHeight = 1;
+const chunkSize = chunkWidth * chunkHeight;
+var<workgroup> bins: array<atomic<u32>, chunkSize>;
+@group(0) @binding(0) var<storage, read_write> chunks: array<array<u32, chunkSize>>;
+@group(0) @binding(1) var ourTexture: texture_2d<f32>;
+
+const kSRGBLuminanceFactors = vec3f(0.2126, 0.7152, 0.0722);
+fn srgbLuminance(color: vec3f) -> f32 {
+  return saturate(dot(color, kSRGBLuminanceFactors));
+}
+
+@compute @workgroup_size(chunkWidth, chunkHeight, 1)
+fn cs(
+  @builtin(global_invocation_id) global_invocation_id: vec3u,
+  @builtin(workgroup_id) workgroup_id: vec3u,
+  @builtin(local_invocation_id) local_invocation_id: vec3u,
+) {
+  let size = textureDimensions(ourTexture, 0);
+  let position = global_invocation_id.xy;
+  if (all(position < size)) {
+    let numBins = f32(chunkSize);
+    let lastBinIndex = u32(numBins - 1);
+    let color = textureLoad(ourTexture, position, 0);
+    let v = srgbLuminance(color.rgb);
+    let bin = min(u32(v * numBins), lastBinIndex);
+    atomicAdd(&bins[bin], 1u);
+  }
+
+  workgroupBarrier();
+
+  let chunksAcross = (size.x + chunkWidth - 1) / chunkWidth;
+  let chunk = workgroup_id.y * chunksAcross + workgroup_id.x;
+  let bin = local_invocation_id.y * chunkWidth + local_invocation_id.x;
+
+  chunks[chunk][bin] = atomicLoad(&bins[bin]);
+}
+```
+
+One more thing we could, rather than hardcode `chunkWidth` and `chunkHeight` we could
+pass them in from JavaScript like this
+
+```js
+  const k = {
+    chunkWidth: 256,
+    chunkHeight: 1,
+  };
+  const sharedConstants = Object.entries(k).map(([k, v]) => `const ${k} = ${v};`).join('\n');
+
+  const histogramChunkModule = device.createShaderModule({
+    label: 'histogram chunk shader',
+    code: `
+      ${sharedConstants}
+      const chunkSize = chunkWidth * chunkHeight;
+      var<workgroup> bins: array<atomic<u32>, chunkSize>;
+      @group(0) @binding(0) var<storage, read_write> chunks: array<array<u32, chunkSize>>;
+      @group(0) @binding(1) var ourTexture: texture_2d<f32>;
+
+      ...
+    `,
+  });
+```
+
+If we ran this shader it would work something like this:
+
 <div class="webgpu_center compute-diagram"><div data-diagram="chunks"></div></div>
 
-sum
+Above you can see each workgroup read one chunk's worth of pixels and update the bins
+accordingly. Just like before, if 2 invocation need to update the same bin one of them
+will have to wait 🛑. Afterwords they all wait for each other at the `workgroupBarrier`
+🚧. After that each invocation copies its bin to the corresponding bin in the chunk
+it's working on.
+
+## Summing the chunks
+
+All the pixel luminance values have now been counted but we need to sum up the
+bins to get the answer. Let's write a compute shader to do that. We can do one
+invocation per bin. Each invocation will just add up all of the values from
+the same bin in each chunk and then write the result to the first chunk
+
+Here's the code
+
+```wgsl
+const chunkWidth = 256;
+const chunkHeight = 1;
+const chunkSize = chunkWidth * chunkHeight;
+@group(0) @binding(0) var<storage, read_write> chunks: array<array<u32, chunkSize>>;
+
+@compute @workgroup_size(chunkSize, 1, 1)
+fn cs(@builtin(local_invocation_id) local_invocation_id: vec3u) {
+  var sum = u32(0);
+  let numChunks = arrayLength(&chunks);
+  for (var i = 0u; i < numChunks; i++) {
+    sum += chunks[i][local_invocation_id.x];
+  }
+  chunks[0][local_invocation_id.x] = sum;
+}
+```
+
+And, like before, we can inject the `chunkWidth` and `chunkHeight`.
+
+```js
+const chunkSumModule = device.createShaderModule({
+  label: 'chunk sum shader',
+  code: `
+*    ${sharedConstants}
+    const chunkSize = chunkWidth * chunkHeight;
+    @group(0) @binding(0) var<storage, read_write> chunks: array<array<u32, chunkSize>>;
+
+    @compute @workgroup_size(chunkSize, 1, 1)
+
+    ...
+    }
+  `,
+});
+```
+
+This shader will effectively work like this
+
 <div class="webgpu_center compute-diagram"><div data-diagram="sum"></div></div>
 
+Now that we have these 2 shaders, let's update the code to use them.
+We need to create pipelines for both shaders
 
-reduce-diagram
+```js
+-  const pipeline = device.createComputePipeline({
+-    label: 'histogram',
+-    layout: 'auto',
+-    compute: {
+-      module,
+-      entryPoint: 'cs',
+-    },
+-  });
+
++  const histogramChunkPipeline = device.createComputePipeline({
++    label: 'histogram',
++    layout: 'auto',
++    compute: {
++      module: histogramChunkModule,
++      entryPoint: 'cs',
++    },
++  });
++
++  const chunkSumPipeline = device.createComputePipeline({
++    label: 'chunk sum',
++    layout: 'auto',
++    compute: {
++      module: chunkSumModule,
++      entryPoint: 'cs',
++    },
++  });
+```
+
+We need to create a storage buffer large enough for all our chunks so we
+compute how many chunks we need to cover the entire image.
+
+```js
+  const imgBitmap = await loadImageBitmap('resources/images/pexels-francesco-ungaro-96938-mid.jpg');
+  const texture = createTextureFromSource(device, imgBitmap);
+
+-  const numBins = 256;
+-  const histogramBuffer = device.createBuffer({
+-    size: numBins * 4, // 256 entries * 4 bytes per (u32)
+-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+-  });
++  const chunkSize = k.chunkWidth * k.chunkHeight;
++  const chunksAcross = Math.ceil(texture.width / k.chunkWidth);
++  const chunksDown = Math.ceil(texture.height / k.chunkHeight);
++  const numChunks = chunksAcross * chunksDown;
++  const chunksBuffer = device.createBuffer({
++    size: numChunks * chunkSize * 4, // 4 bytes per (u32)
++    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
++  });
+```
+
+We still need our result buffer to read the result but it's no longer
+the same size as the previous buffer
+
+```js
+  const resultBuffer = device.createBuffer({
+-    size: numBins * 4, // 256 entries * 4 bytes per (u32)
++    size: chunkSize * 4,  // 4 bytes per (u32)
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+```
+
+We need a bindGroup for each pass. One to pass the texture and chunks
+to the first shader and another to pass the chunks to the second shader
+
+```js
+-  const bindGroup = device.createBindGroup({
++  const histogramBindGroup = device.createBindGroup({
+    label: 'histogram bindGroup',
+    layout: histogramChunkPipeline.getBindGroupLayout(0),
+    entries: [
+-      { binding: 0, resource: { buffer: histogramBuffer }},
++      { binding: 0, resource: { buffer: chunksBuffer }},
+      { binding: 1, resource: texture.createView() },
+    ],
+  });
+
+  const chunkSumBindGroup = device.createBindGroup({
+    label: 'sum bindGroup',
+    layout: chunkSumPipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: chunksBuffer }},
+    ],
+  });
+```
+
+Finally we can run our shaders. First the part that reads
+the pixels and sort them into bins, we dispatch one workgroup for each chunk.
+
+```js
+  const encoder = device.createCommandEncoder({ label: 'histogram encoder' });
+
++  // create a histogram for each area
++  {
+    const pass = encoder.beginComputePass();
+-    pass.setPipeline(pipeline);
+-    pass.setBindGroup(0, bindGroup);
+-    pass.dispatchWorkgroups(texture.width, texture.height);
++    pass.setPipeline(histogramChunkPipeline);
++    pass.setBindGroup(0, histogramBindGroup);
++    pass.dispatchWorkgroups(chunksAcross, chunksDown);
+    pass.end();
+  }
+```
+
+Then we need to run the shader that sums up the chunks. It's just 1 workgroup
+with happens to use 256 invocations.
+
+```js
++  // sum the areas
++  {
++    const pass = encoder.beginComputePass();
++    pass.setPipeline(chunkSumPipeline);
++    pass.setBindGroup(0, chunkSumBindGroup);
++    pass.dispatchWorkgroups(1);
++    pass.end();
++  }
+```
+
+The rest of the code is the same.
+
+Timing this on my machine I was happy to see the first shader runs in 0.2ms!
+It read the entire image and filled out all the chunks lickety-split!
+
+Unfortunately the part that sums up the chunks took much longer. 11ms
+That's SLOWER than our previous shader!
+
+On a different machine the previous solution was was 4.4ms and this new
+was 1.7ms so it wasn't a complete loss. 
+
+Can we do better?
+
+## Reduce
+
+The problem above is used a single workgroup. Even though it has 256 invocations
+a modern GPU has 1000s of cores and we're only use 256 of them.
+
+One technique we could try is sometimes called reducing. We will have each workgroup
+only add 2 chunks, writing the result to the first of those 2 chunks. This way, if we
+have 1000 chunks we can use 500 workgroups. That's far more parallelization.
+We'll repeat the process 500 chunks summed into 250, 250 -> 125, 125 -> 63 etc..
+
 <div class="webgpu_center compute-diagram"><div data-diagram="reduceDiagram"></div></div>
 
+We can use just one shader and we just have to pass in a stride to reduce the chunks
+down to one chunk.
 
+Here are the changes to our shader
 
-reduce
+```js
+const chunkSumModule = device.createShaderModule({
+  label: 'chunk sum shader',
+  code: `
+    ${sharedConstants}
+    const chunkSize = chunkWidth * chunkHeight;
+
++    struct Uniforms {
++      stride: u32,
++    };
+
+    @group(0) @binding(0) var<storage, read_write> chunks: array<array<vec4u, chunkSize>>;
++    @group(0) @binding(1) var<uniform> uni: Uniforms;
+
+    @compute @workgroup_size(chunkSize, 1, 1) fn cs(
+      @builtin(local_invocation_id) local_invocation_id: vec3u,
+      @builtin(workgroup_id) workgroup_id: vec3u,
+    ) {
+-      var sum = u32(0);
+-      let numChunks = arrayLength(&chunks);
+-      for (var i = 0u; i < numChunks; i++) {
+-        sum += chunks[i][local_invocation_id.x];
+-      }
+-      chunks[0][local_invocation_id.x] = sum;
++      let chunk0 = workgroup_id.x * uni.stride * 2;
++      let chunk1 = chunk0 + uni.stride;
++
++      let sum = chunks[chunk0][local_invocation_id.x] +
++                chunks[chunk1][local_invocation_id.x];
++      chunks[chunk0][local_invocation_id.x] = sum;
+    }
+  `,
+});
+```
+
+You can see above, we compute a `chunk0` and `chunk1` based on the `workgroup_id.x`
+and `uni.stride` that we pass in as a uniform.
+
+If we run it with the correct number of invocations and stride settings it will
+operate something like this
+
 <div class="webgpu_center compute-diagram"><div data-diagram="reduce"></div></div>
 
 
-# Drawing a histogram
+
+
+
+
 
 # M1
 

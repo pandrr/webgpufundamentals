@@ -1564,21 +1564,23 @@ renderDiagrams({
     const numbers = shuffle(range(13, i => i + 1));
     const unitsAcross = numbers.length * 2 - 1;
     const steps = 1 + Math.ceil(Math.log2(numbers.length));
-    const unitsDown = steps * 2 - 1;
     const size = 16;
-    const draw = svg().addTo(diagramDiv).viewbox(0, 0, size * unitsAcross, unitsDown * size);
+    const strideSpace = size * 3.5;
+    const unitsDown = steps * 2 - 1;
+    const draw = svg().addTo(diagramDiv).viewbox(0, 0, size * unitsAcross + strideSpace, unitsDown * 1.25 * size);
+    const bins = draw.group().transform({translateX: strideSpace});
 
-    const iMarker = draw.marker(16, 8, function(add) {
+    const iMarker = bins.marker(16, 8, function(add) {
       add.polygon([0, 0, 8, 4, 0, 8]).fill('gray').attr({orient: 'auto'});
     });
 
     function drawCell(x, y, num, color) {
-      draw.rect(size, size).move(x, y).fill(color);
-      makeText(draw, num.toString()).font({anchor: 'middle'}).center(x + size / 2, y + size / 2);
+      bins.rect(size, size).move(x, y).fill(color);
+      makeText(bins, num.toString()).font({anchor: 'middle'}).center(x + size / 2, y + size / 2);
     }
 
     function drawCurvyArrow(x0, y0, x1, y1) {
-      return draw.path([
+      return bins.path([
         ['M', x0, y0],
         ['C',
           lerp(x0, x1, 0.2), lerp(y0, y1, 1),
@@ -1592,9 +1594,9 @@ renderDiagrams({
       if (step > 0) {
         const x0 = x2;
         const y0 = (step - 1) * 2 * size;
-        const x1 = x0 + stride / 2 * size;
+        const x1 = x0 + stride * size;
 
-        if (i + stride / 4 < numbers.length) {
+        if (i + stride / 2 < numbers.length) {
           drawCurvyArrow(x0 + size * 0.5, y0 + size, x2 + size * 0.5, y2).fill('none').stroke('gray').marker('end', iMarker);
           drawCurvyArrow(x1 + size * 0.5, y0 + size, x2 + size * 0.8, y2).fill('none').stroke('gray').marker('end', iMarker);
         } else {
@@ -1605,25 +1607,26 @@ renderDiagrams({
 
     for (let step = 0; step < steps; ++step) {
       const color = hsl(step / steps * 0.2, 0.7, 0.5);
-      const stride = 2 ** (step + 1);
-      console.log(stride);
+      const stride = 2 ** step;
+      const y2 = step * 2.5 * size;
 
-/*
-      13 (2)                   12    6
-      13 (4)                   10    0 4 8
-*/
-      for (let i = 0; i < numbers.length; i += stride) {
-        const ndx = i + stride / 2;
+      draw.text(`stride: ${stride}`).move(0, y2 - size / 3).font({
+        family: 'monospace',
+        size: '8',
+      })
+      .css({fill: 'var(--main-fg-color)'});
+
+      for (let i = 0; i < numbers.length; i += stride * 2) {
+        const ndx = i + stride;
         const x2 = i * 2 * size;
-        const y2 = step * 2 * size;
         drawCell(x2, y2, numbers[i], color);
         drawConnection(x2, y2, i, step, stride);
 
         if (ndx < numbers.length) {
           const x3 = ndx * 2 * size;
           drawCell(x3, y2, numbers[ndx], color);
-          numbers[i] += numbers[i + stride / 2];
-          drawConnection(x3, y2, i + stride / 2, step, stride);
+          numbers[i] += numbers[i + stride];
+          drawConnection(x3, y2, i + stride, step, stride);
         }
       }
     }
