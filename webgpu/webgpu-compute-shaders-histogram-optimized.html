@@ -40,7 +40,9 @@ async function main() {
     chunkWidth: 256,
     chunkHeight: 1,
   };
-  const sharedConstants = Object.entries(k).map(([k, v]) => `const ${k} = ${v};`).join('\n');
+  const sharedConstants = Object.entries(k)
+    .map(([k, v]) => `const ${k} = ${v};`)
+    .join('\n');
 
   const histogramChunkModule = device.createShaderModule({
     label: 'histogram chunk shader',

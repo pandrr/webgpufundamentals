@@ -40,9 +40,9 @@ async function main() {
 
       @compute @workgroup_size(1, 1, 1)
       fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
-        let position = global_invocation_id.xy;
         let numBins = f32(arrayLength(&bins));
         let lastBinIndex = u32(numBins - 1);
+        let position = global_invocation_id.xy;
         let color = textureLoad(ourTexture, position, 0);
         let v = srgbLuminance(color.rgb);
         let bin = min(u32(v * numBins), lastBinIndex);

@@ -4,15 +4,16 @@ TOC: Image Histogram
 
 This article continues from [the article on compute shader basics](webgpu-compute-shaders.html).
 
-This is going to be a long 2 part article and unfortunately we're going to take many steps to optimize
-things. This optimization will make things faster but the output will not change so each step
-will look the same as the previous step. Further, we're going to
-mention speed and timing but the articles and examples would get
-even longer if we added the code to do the timing so we'll leave
-timing to [another article](webgpu-timing.html) and in these articles
-I'll just mention my own timing and provide some run-able examples.
-Hopefully this article will provide a good example of making
-a compute shader.
+This is going to be a long 2 part article and we're going to take many steps to
+optimize things. This optimization will make things faster but the output will
+unfortunately not change the result so each step will look the same as the
+previous step. 
+
+Further, we're going to mention speed and timing but the articles
+and examples would get even longer if we added the code to do the timing so
+we'll leave timing to [another article](webgpu-timing.html) and in these
+articles I'll just mention my own timing and provide some run-able examples.
+Hopefully this article will provide one example of making a compute shader.
 
 An image histogram is where you sum up all the pixels in an image by their values or
 by some measure of their values.
@@ -74,8 +75,8 @@ Finally we can graph the values in those bins
   </div>
 </div>
 
-That's not so interesting with just 3 bins. I graphed it with curves since there are only 3 bins.
-But, if we take a picture like this
+That's not so interesting with just 3 bins. I graphed it with curves since there are only 3 bins as it would
+look pretty boring otherwise. 😅 But, if we take a picture like this
 
 <div class="center">
   <div>
@@ -95,8 +96,7 @@ and we count up the pixel luminance values, separate them into say 256 bins, and
 Computing an image histogram is pretty simple. Let's first do it in JavaScript
 
 Let's make a function that given an `ImageData` object, generates
-a histogram. We'll actually make 4 of them. One for red values,
-one for green, one for blue, and one for luminosity.
+a histogram.
 
 ```js
 function computeHistogram(numBins, imgData) {
@@ -119,9 +119,9 @@ function computeHistogram(numBins, imgData) {
 }
 ```
 
-As you can see above, we walk through each pixel. We extra r, g, and b.
-We compute a luminance value. We convert that to a bin index and increment
-that bin's count.
+As you can see above, we walk through each pixel. We extract r, g, and b from
+the image. We compute a luminance value. We convert that to a bin index and
+increment that bin's count.
 
 Once we have that data we can graph it. The main graph function just
 draws a line for each bin multiplied by some scale and the height of
@@ -134,12 +134,11 @@ the canvas.
     const v = histogram[x] * scale * height;
     ctx.fillRect(x, height - v, 1, v);
   }
-
 ```
 
 Deciding on a scale appears to be just a personal choice. If you know of a good
-formula for choosing a scale level a comment. Based on looking around the net
-I came up with this formula for scale
+formula for choosing a scale leave a comment. 😅 Based on looking around the net
+I came up with this formula for scale.
 
 ```js
   const numBins = histogram.length;
@@ -214,7 +213,7 @@ function showImageBitmap(imageBitmap) {
 }
 ```
 
-Let's add some CSS so things not displayed too big
+Let's add some CSS so our image is not displayed too big
 
 ```css
 canvas {
@@ -224,7 +223,7 @@ canvas {
 }
 ```
 
-And then what's left to do is to call the functions we wrote above.
+And then we just need call the functions we wrote above.
 
 ```js
 async function main() {
@@ -282,7 +281,9 @@ of one vector with the corresponding element of another vector and then adds
 the results. For `vec3f` like above, it could be defined as
 
 ```wgsl
-fn dot(a: vec3f, b: vec3f) -> f32 { return a.x * b.x + a.y * b.y + a.z * b.z; }
+fn dot(a: vec3f, b: vec3f) -> f32 {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
 ```
 
 Which is what we had in JavaScript. The major difference is in WGSL we'll
@@ -366,7 +367,7 @@ We call `textureLoad` to get the color from the texture.
 ```
 
 `textureLoad` returns a single texel from a single mip level of a texture.
-It takes a texture, an unsigned integer texel coordinate, and a mip level
+It takes a texture, an `vec2u` texel position, and a mip level
 (the `0`).
 
 We compute a luminance value, convert it to a bin index and increment that bin.
@@ -453,7 +454,7 @@ We need to create a storage buffer for the shader to sum up the color values wit
 ```js
   const numBins = 256;
   const histogramBuffer = device.createBuffer({
-    size: numBins * 4 * 4, // 256 entries * 4 bytes per (u32)
+    size: numBins * 4, // 256 entries * 4 bytes per (u32)
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
   });
 ```
@@ -521,15 +522,11 @@ and then execute the commands
 +  device.queue.submit([commandBuffer]);
 ```
 
-Then we can get the data from the result buffer and pass it to our existing functions
+Finally we can get the data from the result buffer and pass it to our existing functions
 to draw the histogram
 
 ```js
   await resultBuffer.mapAsync(GPUMapMode.READ);
-  const histogram = new Uint32Array(resultBuffer.getMappedRange());
-
-  showImageBitmap(imgBitmap);
-
   const histogram = new Uint32Array(resultBuffer.getMappedRange());
 
   showImageBitmap(imgBitmap);
@@ -544,7 +541,7 @@ And it should work
 
 {{{example url="../webgpu-compute-shaders-histogram-slow.html"}}}
 
-Timing the results I found **this is about 30x slower than the JavaScript version!!!** 😱😱😱
+Timing the results I found **this is about 30x slower than the JavaScript version!!!** 😱😱😱 (YMMV).
 
 What's up with that? We designed our solution above with a single loop and used
 a single workgroup invocation with a size of 1. That means just a single "core" of
@@ -566,7 +563,7 @@ Here's a diagram of what's happening using our small example texture.
 > * They show only 3 bins where as our shader has 256 bins
 > * The code is simplified.
 > * ▢ is the texel color
-> * ◯ is the bin represented as luminance
+> * ◯ is the bin selection represented as luminance
 > * Many things are abbreviated.
 >   * `wid` = `workgroup_id`
 >   * `gid` = `global_invocation_id`
@@ -597,8 +594,8 @@ for (y) {
 }
 ```
 
-We could change the code use instead use `global_invocation_id.x` and `global_invocation_id.y`
-as inputs and then process every single pixel in a separate invocation.
+We could change the code use instead use `global_invocation_id`
+as an input and then process every single pixel in a separate invocation.
 
 Here's the needed changes to the shader
 
@@ -615,12 +612,12 @@ fn srgbLuminance(color: vec3f) -> f32 {
 -fn cs() {
 +fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
 -  let size = textureDimensions(ourTexture, 0);
-+  let position = global_invocation_id.xy;
   let numBins = f32(arrayLength(&histogram));
   let lastBinIndex = u32(numBins - 1);
 -  for (var y = 0u; y < size.y; y++) {
 -    for (var x = 0u; x < size.x; x++) {
 -      let position = vec2u(x, y);
++  let position = global_invocation_id.xy;
   let color = textureLoad(ourTexture, position, 0);
   let v = srgbLuminance(color.rgb);
   let bin = min(u32(v * numBins), lastBinIndex);
@@ -699,7 +696,8 @@ Actually translates to this
 
 ```wgsl
    let value = bins[bin];
-   bins[bin] = value + 1;
+   value = value + 1
+   bins[bin] = value;
 ```
 
 What happens when 2 or more invocations are running in parallel
@@ -748,10 +746,10 @@ oblivious that another invocation is reading and updating the same bin at the sa
 WGSL has special "atomic" instructions to solve this issue. This case we
 can use `atomicAdd`. `atomicAdd` makes the addition "atomic" which
 means rather than 3 operations, load->add->store, all 3 operations
-happen at once "atomically". This effectively prevents more than
-two invocations from updating the value at the same time.
+happen at once, "atomically". This effectively prevents more than
+two invocations from updating a value at the same time.
 
-atomic functions have the requirement that they only work on
+Atomic functions have the requirement that they only work on
 `i32` or `u32` and they require to data itself to be of type `atomic`.
 
 Here's the changes to our shaders
@@ -768,9 +766,9 @@ fn srgbLuminance(color: vec3f) -> f32 {
 
 @compute @workgroup_size(1, 1, 1)
 fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
-  let position = global_invocation_id.xy;
   let numBins = f32(arrayLength(&bins));
   let lastBinIndex = u32(numBins - 1);
+  let position = global_invocation_id.xy;
   let color = textureLoad(ourTexture, position, 0);
   let v = srgbLuminance(color.rgb);
   let bin = min(u32(v * numBins), lastBinIndex);
@@ -784,10 +782,10 @@ With that our compute shader, that uses 1 workgroup invocation per pixel, works!
 {{{example url="../webgpu-compute-shaders-histogram-race-fixed.html"}}}
 
 Unfortunately we have a new problem. `atomicAdd` effectively needs to block
-another invocation from updating the same bin at the same time. We can see
+other invocations from updating the same bin at the same time. We can see
 the issue here. The diagram below shows `atomicAdd` as 3 operations
 but when an invocation is doing an `atomicAdd` it "locks the bin"
-so that another invocation has to wait until it's done.
+so that another invocation has to wait until it's done. 
 
 <div class="webgpu_center compute-diagram">
   <div>Two workgroups, one locking the bottom bin, the other blocked from using the same bottom bin</div>
@@ -796,17 +794,17 @@ so that another invocation has to wait until it's done.
 
 In the diagrams, when an invocation is locking a bin it will have a line from the invocation to
 the bin in the color of the bin. Invocations that are waiting for that bin to
-unlock will have a stop sign on them.
+unlock will have a stop sign 🛑 on them.
 
 <div class="webgpu_center compute-diagram"><div data-diagram="noRace"></div></div>
 
-In my machine, this new version runs at around 4x faster than JavaScript though YMMV.
+On my machine, this new version runs at around 4x faster than JavaScript though YMMV.
 
 ## Workgroups
 
 Can we go faster? As mentioned in [the previous article](../webgpu-compute-shaders.html),
 the "workgroup" is the smallest unit of work we can ask the GPU can do. You define the size
-of a workgroup in 3 dimensions when you create a shader module, 
+of a workgroup in 3 dimensions when you create the shader module, 
 and then you call `dispatchWorkgroups` to run a bunch of these workgroups.
 
 Workgroups can share internal storage and coordinate that storage with in the workgroup
@@ -815,15 +813,16 @@ itself. How could we take advantage of that fact?
 Let's try this. We'll make our workgroup size, 256x1 (so 256 invocations per workgroup).
 We'll have each invocation work on a 256x1 section of the image. This will mean
 we will have `Math.ceil(texture.width / 256) * texture.height` total workgroups.
+For our image, which is 2448 × 1505, that would be 10 x 1505 or 15050 workgroups.
 
 We'll have the invocations within the workgroup use workgroup storage to sum up the
 luminance values into bins.
 
-Finally we'll copy the workgroup memory into for each workgroup, into it's own "chunk".
+Finally we'll copy the workgroup memory for the workgroup into its own "chunk".
 When were done, we'll run another compute shader to sum up the chunks.
 
 Let's edit our shader. First we'll change our `bins` from type `storage` to
-type `workgroup` so he'll only be shared with invocations in the same workgroup
+type `workgroup` so they'll only be shared with invocations in the same workgroup.
 
 ```wgsl
 -@group(0) @binding(0) var<storage, read_write> bins: array<atomic<u32>>;
@@ -847,7 +846,7 @@ fn srgbLuminance(color: vec3f) -> f32 {
 }
 ```
 
-We can use our constants to define our workgroup size
+We can use the constants to define our workgroup size
 
 ```wsgl
 -@compute @workgroup_size(1, 1, 1)
@@ -872,14 +871,14 @@ fn cs(@builtin(global_invocation_id) global_invocation_id: vec3u) {
   }
 ```
 
-Because our chunk size is hardcoded into the shader we don't want to work
+Because our chunk size is hardcoded into the shader we don't want to work on
 pixels outside of our texture. So for example if our image was 300 pixels
 wide, the first workgroup would work on pixels 0 to 255. The second workgroup
-would work on pixels 256 to 511. But we only need work to pixel 299.
+would work on pixels 256 to 511. But we only need work up to pixel 299.
 This is what the `if(all(position < size))` does. both `position` and `size` are
 `vec2u` and so `position < size` will produce 2 boolean values which is a`vec2<bool>`.
 the `all` function returns `true` if all of its inputs are true. So, the code
-will only go inside the if if `position.x < size.x` and `position.y < size.y`.
+will only go inside the `if` if `position.x < size.x` and `position.y < size.y`.
 
 As for `numBins`, we have as many bins as we defined for the chunk size.
 We can no longer lookup the size because we don't pass in a buffer for
@@ -945,8 +944,7 @@ one of the `chunks` so we need to make sure all other invocations are done.
 To say this another way, any invocation can `atomicAdd` any element in `bins`
 depending on what color it reads from the texture. But, only
 `local_invocation_id` = 3,0 will copy `bin[3]` to `chunks[chunk][3]` so it
-has to wait for all other invocations to have their chance to update `bin[3]`
-
+has to wait for all other invocations to have their chance to update `bin[3]`.
 
 Putting it all together here is our new shader
 
@@ -990,20 +988,24 @@ fn cs(
 }
 ```
 
-One more thing we could, rather than hardcode `chunkWidth` and `chunkHeight` we could
-pass them in from JavaScript like this
+One more thing we could do, rather than hardcode `chunkWidth` and `chunkHeight`
+we could pass them in from JavaScript like this
 
 ```js
-  const k = {
-    chunkWidth: 256,
-    chunkHeight: 1,
-  };
-  const sharedConstants = Object.entries(k).map(([k, v]) => `const ${k} = ${v};`).join('\n');
++  const k = {
++    chunkWidth: 256,
++    chunkHeight: 1,
++  };
++  const sharedConstants = Object.entries(k)
++    .map(([k, v]) => `const ${k} = ${v};`)
++    .join('\n');
 
   const histogramChunkModule = device.createShaderModule({
     label: 'histogram chunk shader',
     code: `
-      ${sharedConstants}
+-      const chunkWidth = 256;
+-      const chunkHeight = 1;
++      ${sharedConstants}
       const chunkSize = chunkWidth * chunkHeight;
       var<workgroup> bins: array<atomic<u32>, chunkSize>;
       @group(0) @binding(0) var<storage, read_write> chunks: array<array<u32, chunkSize>>;
@@ -1018,11 +1020,11 @@ If we ran this shader it would work something like this:
 
 <div class="webgpu_center compute-diagram"><div data-diagram="chunks"></div></div>
 
-Above you can see each workgroup read one chunk's worth of pixels and update the bins
-accordingly. Just like before, if 2 invocations need to update the same bin one of them
-will have to wait 🛑. Afterwords they all wait for each other at the `workgroupBarrier`
-🚧. After that each invocation copies its bin to the corresponding bin in the chunk
-it's working on.
+Above you can see, each workgroup reads one chunk's worth of pixels and updates
+the bins accordingly. Just like before, if 2 invocations need to update the same
+bin one of them will have to wait 🛑. Afterwords they all wait for each other at
+the `workgroupBarrier` 🚧. After that each invocation copies the bin it's
+responsible for to the corresponding bin in the chunk it's working on.
 
 ## Summing the chunks
 
@@ -1131,7 +1133,7 @@ the same size as the previous buffer
 
 ```js
   const resultBuffer = device.createBuffer({
--    size: numBins * 4, // 256 entries * 4 bytes per (u32)
+-    size: histogramBuffer.size,
 +    size: chunkSize * 4,  // 4 bytes per (u32)
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
   });
@@ -1161,8 +1163,8 @@ to the first shader and another to pass the chunks to the second shader
   });
 ```
 
-Finally we can run our shaders. First the part that reads
-the pixels and sort them into bins, we dispatch one workgroup for each chunk.
+Finally we can run our shaders. First, the part that reads
+the pixels and sorts them into bins, we dispatch one workgroup for each chunk.
 
 ```js
   const encoder = device.createCommandEncoder({ label: 'histogram encoder' });
@@ -1181,7 +1183,7 @@ the pixels and sort them into bins, we dispatch one workgroup for each chunk.
 ```
 
 Then we need to run the shader that sums up the chunks. It's just 1 workgroup
-with happens to use 256 invocations.
+which uses 1 invocation per bin (256 invocations).
 
 ```js
 +  // sum the areas
@@ -1211,18 +1213,21 @@ Can we do better?
 
 ## Reduce
 
-The problem above is used a single workgroup. Even though it has 256 invocations
+The solution above used a single workgroup. Even though it has 256 invocations
 a modern GPU has 1000s of cores and we're only use 256 of them.
 
 One technique we could try is sometimes called reducing. We will have each workgroup
 only add 2 chunks, writing the result to the first of those 2 chunks. This way, if we
 have 1000 chunks we can use 500 workgroups. That's far more parallelization.
-We'll repeat the process 500 chunks summed into 250, 250 -> 125, 125 -> 63 etc..
+We'll repeat the process 500 chunks reduced into 250, 250 -> 125, 125 -> 63 etc...
+until we've reduced to 1 chunk.
 
 <div class="webgpu_center compute-diagram"><div data-diagram="reduceDiagram"></div></div>
 
 We can use just one shader and we just have to pass in a stride to reduce the chunks
-down to one chunk.
+down to one chunk. The stride is the number of chunks we need to look at get the
+second chunk we're summing with. If we pass in a stride of 1 then we'll sum adjacent
+chunks. If we pass in a stride of 2 then we sum every other chunk. etc...
 
 Here are the changes to our shader
 
@@ -1328,18 +1333,35 @@ dispatches until we've reduced things to 1 chunk
 
 Timing this version I got under 1ms on both machines I tested! 🎉🚀
 
+<!--
+Here are some timings from various machines
+<div class="webgpu_center data-table">
+  <div data-table='{
+    "cols": [       "machine",           "js",     "single",  "pixel/workgroup", "chunks+sum", "chunks+reduce"],
+    "classNames": [ "left",              "right",  "right",   "right",           "right",      "right" ],
+    "rows": [
+                  [ "M1 Mac",            "2.8ms",  "768ms",   "3.2ms",          "11.2ms",      "0.9ms" ],
+                  [ "AMD",               "0ms",    "0ms",     "0.0ms",           "0.0ms",      "0.0ms" ],
+                  [ "NVidia 2070 Super", "19.0ms", "365.0ms", "4.4ms",           "1.7ms",      "0.8ms" ]
+    ]
+  }'></div>
+</div>
+-->
+
 There may be a faster way to compute a histogram. It might also be better
 to try different chunk sizes. Maybe 16x16 is better than 256x1.
 Also, at some point WebGPU will likely support *subgroups* which is
 yet another whole topic and an area for even more optimization.
 
-For now I hope these steps have given you some ideas on how to write
+For now I hope these examples have given you some ideas on how to write
 and optimize a compute shader. The takeaways are:
 
 * Find a way to use all of the parallelization the GPU provides
 * Be aware of race conditions
 * Use `var<workgroup>` to create storage shared between all invocations of a workgroup
 * Try to design algorithms that require less coordination between invocations.
+* When coordination is required, atomic operations can be a solution as well
+  as `workgroupBarrier`.
 
   We did so-so on this front. When computing our chunks in workgroup memory
   we still have conflicts which we resolved via `atomicAdd` but we have no
@@ -1350,11 +1372,12 @@ Maybe one more
 
 * Don't assume the GPU is fast.
 
-  We learned individual cores of a GPU are not so fast. 
+  We learned individual cores of a GPU are not so fast. All the speed comes
+  from parallelization so we need to design parallel solutions.
 
 In [the next article](webgpu-compute-shaders-histogram-part-2.html) we'll
 tweak these a little as well as change it so we
-graph the results using the CPU instead of pulling them back to JavaScript.
+graph the results using the WebGPU instead of pulling them back to JavaScript.
 We'll even try some real time video adjustments.
 
 <!-- keep this at the bottom of the article -->
