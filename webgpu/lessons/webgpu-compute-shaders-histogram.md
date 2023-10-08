@@ -1377,8 +1377,9 @@ Maybe one more
 
 In [the next article](webgpu-compute-shaders-histogram-part-2.html) we'll
 tweak these a little as well as change it so we
-graph the results using the WebGPU instead of pulling them back to JavaScript.
-We'll even try some real time video adjustments.
+graph the results using the GPU instead of pulling them back to JavaScript.
+We'll also try some real time video adjustments based on having created
+an image histogram.
 
 <!-- keep this at the bottom of the article -->
 <link rel="stylesheet" href="webgpu-compute-shaders-histogram.css">
