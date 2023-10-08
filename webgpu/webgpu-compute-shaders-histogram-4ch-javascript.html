@@ -25,33 +25,44 @@ async function main() {
 
   showImageBitmap(imgBitmap);
 
+  // draw the red, green, and blue channels
   const numEntries = imgData.width * imgData.height;
-  drawHistogram(histogram, numEntries);
+  drawHistogram(histogram, numEntries, [0, 1, 2]);
+
+  // draw the luminosity channel
+  drawHistogram(histogram, numEntries, [3]);
 }
 
 function computeHistogram(numBins, imgData) {
   const {width, height, data} = imgData;
-  const bins = new Array(numBins).fill(0);
+  const bins = new Array(numBins * 4).fill(0);
   for (let y = 0; y < height; ++y) {
     for (let x = 0; x < width; ++x) {
       const offset = (y * width + x) * 4;
 
-      const r = data[offset + 0] / 255;
-      const g = data[offset + 1] / 255;
-      const b = data[offset + 2] / 255;
-      const v = srgbLuminance(r, g, b);
-
-      const bin = Math.min(numBins - 1, v * numBins) | 0;
-      ++bins[bin];
+      for (let ch = 0; ch < 4; ++ch) {
+        const v = ch < 3
+           ? data[offset + ch] / 255
+           : srgbLuminance(data[offset + 0] / 255,
+                           data[offset + 1] / 255,
+                           data[offset + 2] / 255);
+        const bin = Math.min(numBins - 1, v * numBins) | 0;
+        ++bins[bin * 4 + ch];
+      }
     }
   }
   return bins;
 }
 
-function drawHistogram(histogram, numEntries, height = 100) {
-  const numBins = histogram.length;
-  const max = Math.max(...histogram);
-  const scale = Math.max(1 / max);//, 0.2 * numBins / numEntries);
+function drawHistogram(histogram, numEntries, channels, height = 100) {
+  // find the highest value for each channel
+  const numBins = histogram.length / 4;
+  const max = [0, 0, 0, 0];
+  histogram.forEach((v, ndx) => {
+    const ch = ndx % 4;
+    max[ch] = Math.max(max[ch], v);
+  });
+  const scale = max.map(max => Math.max(1 / max, 0.2 * numBins / numEntries));
 
   const canvas = document.createElement('canvas');
   canvas.width = numBins;
@@ -59,11 +70,22 @@ function drawHistogram(histogram, numEntries, height = 100) {
   document.body.appendChild(canvas);
   const ctx = canvas.getContext('2d');
 
-  ctx.fillStyle = '#fff';
+  const colors = [
+    'rgb(255, 0, 0)',
+    'rgb(0, 255, 0)',
+    'rgb(0, 0, 255)',
+    'rgb(255, 255, 255)',
+  ];
+
+  ctx.globalCompositeOperation = 'screen';
 
   for (let x = 0; x < numBins; ++x) {
-    const v = histogram[x] * scale * height;
-    ctx.fillRect(x, height - v, 1, v);
+    const offset = x * 4;
+    for (const ch of channels) {
+      const v = histogram[offset + ch] * scale[ch] * height;
+      ctx.fillStyle = colors[ch];
+      ctx.fillRect(x, height - v, 1, v);
+    }
   }
 }
 
@@ -88,6 +110,9 @@ function getImageData(imgBitmap) {
 
 function showImageBitmap(imageBitmap) {
   const canvas = document.createElement('canvas');
+
+  // we have to see the canvas size because of a firefox bug
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1850871
   canvas.width = imageBitmap.width;
   canvas.height = imageBitmap.height;
 
