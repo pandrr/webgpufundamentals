@@ -358,4 +358,4 @@ We'll go over some of the ways to deal with this issue in future examples. For n
 two examples have no race conditions as each iteration of the compute shader does something
 unaffected by the other iterations.
 
-More Examples: TBD
+Next up: [Example Compute Shaders - Image Histogram](webgpu-compute-shaders-histogram.html)
