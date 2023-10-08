@@ -98,6 +98,10 @@ export const rgba8unormFromCSS = (() => {
   };
 })();
 
+export const rgbaFloatFromCSS = (cssColor) => {
+  return rgba8unormFromCSS(cssColor).map(v => v / 255);
+};
+
 export const shortSize = (function() {
   const suffixes = ['b', 'k', 'mb', 'gb', 'tb', 'pb'];
   return function(size) {

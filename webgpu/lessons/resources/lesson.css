@@ -177,6 +177,10 @@ div[data-diagram] {
 .spread .code>div {
   text-align: left;
 }
+.center-vertically {
+  display: flex;
+  justify-content: center;
+}
 #c {
   position: absolute;
   top: 0;

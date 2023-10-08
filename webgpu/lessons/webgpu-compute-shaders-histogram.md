@@ -75,8 +75,8 @@ Finally we can graph the values in those bins
   </div>
 </div>
 
-That's not so interesting with just 3 bins. I graphed it with curves since there are only 3 bins as it would
-look pretty boring otherwise. 😅 But, if we take a picture like this
+The graph shows that there are more dark pixels (🟦 18) than medium brightness pixels (🟥 16) and
+even fewer bright pixels (🟨 8). That's not so interesting with just 3 bins. I graphed it with curves to try to make it look slightly more interesting 😅. But, if we take a picture like this
 
 <div class="center">
   <div>

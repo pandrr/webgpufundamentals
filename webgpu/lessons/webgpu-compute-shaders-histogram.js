@@ -8,7 +8,7 @@ import { SVG as svg } from '/3rdparty/svg.esm.js';
 import {
   createElem as el, select, makeTable,
 } from './resources/elem.js';
-import { clamp01, hsl, lerp, rgba, rgba8unormFromCSS } from './resources/utils.js';
+import { clamp01, hsl, lerp, rgba, rgbaFloatFromCSS, rgba8unormFromCSS } from './resources/utils.js';
 
 
 const image = [
@@ -30,19 +30,19 @@ const image = [
   */
 ].map(s => s.match(/../g));
 
-const texelColorToBinNdx = {
-  '🟥': 0,
-  '🟨': 1,
-  '🟦': 2,
+const binNdxFromTexelColor = {
+  '🟥': 1,
+  '🟨': 2,
+  '🟦': 0,
 };
 
-const unicodeColorsToCSS = {
+const cssFromUnicodeColor = {
   '⬛️': 'black',
-  '🟥': 'red',
+  '🟥': '#f55',
   '🟧': 'orange',
-  '🟨': 'yellow',
+  '🟨': '#FD0',
   '🟩': 'green',
-  '🟦': 'blue',
+  '🟦': '#23F',
   '🟪': 'purple',
   '🟫': 'brown',
   '⬜️': 'white',
@@ -56,7 +56,7 @@ const unicodeColorsToCSS = {
 
 // Returns a value from 0 to 1 for luminance.
 // where r, g, b each go from 0 to 1.
-function srgbLuminance(data, r, g, b) {
+function srgbLuminance(r, g, b) {
   // from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
   return r * 0.2126 +
          g * 0.7152 +
@@ -85,7 +85,7 @@ const imgChunkData = [];
     const yOff = chunkNdx / 2 | 0;
     for (let x = 0; x < numBins; ++x) {
       const color = image[yOff][xOff + x];
-      const binNdx = texelColorToBinNdx[color];
+      const binNdx = binNdxFromTexelColor[color];
       ++data[binNdx];
     }
     imgChunkData.push(data);
@@ -96,7 +96,7 @@ function createImage(draw, image, size) {
   const group = draw.group();
   image.forEach((pixels, y) => {
     pixels.forEach((pixel, x) => {
-      group.rect(size, size).move(x * size, y * size).fill(unicodeColorsToCSS[pixel]);
+      group.rect(size, size).move(x * size, y * size).fill(cssFromUnicodeColor[pixel]);
     });
   });
   return {
@@ -169,6 +169,13 @@ const binNdxToBinColor = kBins.map((_, i) => hsl(0, 0, (i + 0.5) / kBins.length)
 const setTranslation = (e, x, y) => e.attr({transform: `translate(${x}, ${y})`});
 const range = (n, fn) => new Array(n).fill(0).map((_, v) => fn(v));
 const sineOut = t => 1 - Math.cos(t * Math.PI * 0.5);
+
+const luminanceFromUnicodeColor = color => srgbLuminance(...rgbaFloatFromCSS(cssFromUnicodeColor[color]));
+const sortByLuminance = (colorA, colorB) => {
+  const luminanceA = luminanceFromUnicodeColor(colorA);
+  const luminanceB = luminanceFromUnicodeColor(colorB);
+  return Math.sign(luminanceA - luminanceB);
+};
 
 //const darkColors = {
 //  main: '#fff',
@@ -370,7 +377,7 @@ function makeComputeDiagram(elem, {
   let speed = 1;
   let playing = true;
 
-  const speeds = [0.25, 0.5, 1, 2, 4];
+  const speeds = [0.25, 0.5, 1, 2, 4, 16, 32];
 
   const lines = (() => {
     const leadRE = /^ */;
@@ -403,7 +410,7 @@ function makeComputeDiagram(elem, {
         el('img', { dataset: {id: 'pause'}, src: '/webgpu/lessons/resources/pause.svg'}),
         el('img', { style: { display: 'none' }, dataset: {id: 'play'}, src: '/webgpu/lessons/resources/play.svg'}),
       ]),
-      select('', ['¼x', '½x', '1x', '2x', '4x'], 2, function(ndx) {
+      select('', ['¼x', '½x', '1x', '2x', '4x', '16x', '32x'], 2, function(ndx) {
         speed = speeds[ndx];
       }),
     ]));
@@ -825,7 +832,7 @@ function makeComputeDiagram(elem, {
         function* textureLoad(tx, ty, texel) {
           yield invocation.setInstructions('textureLoad(...)');
           yield goto(imgX + (tx + 0.5) * size, imgY + (ty + 0.5) * size, colX, colY, colX, colY);
-          const color = unicodeColorsToCSS[texel];
+          const color = cssFromUnicodeColor[texel];
           rect.show();
           rect.fill(color);
           yield goto(colX, colY, colX, colY);
@@ -839,7 +846,7 @@ function makeComputeDiagram(elem, {
           //const color = unicodeColorsToCSS[texel];
           yield invocation.advanceLine();
           yield textureLoad(tx, ty, texel);
-          const binNdx = texelColorToBinNdx[texel];
+          const binNdx = binNdxFromTexelColor[texel];
           const chunk = chunks[0];
           const storageBin = chunk.bins[binNdx];
 
@@ -999,7 +1006,7 @@ function makeComputeDiagram(elem, {
           lockedBin: function*({global_invocation_id}) {
             yield invocation.setInstructions('atomicAdd(&histogram[bin], 1)', 0);
             const texel = kBins[2];
-            const binNdx = texelColorToBinNdx[texel];
+            const binNdx = binNdxFromTexelColor[texel];
             const color = binNdxToBinColor[binNdx];
             invocation.bin.fill(color);
             const chunk = chunks[0];
@@ -1040,7 +1047,7 @@ function makeComputeDiagram(elem, {
             const texel = image[ty][tx];
             yield textureLoad(tx, ty, texel);
             yield invocation.advanceLine();
-            const binNdx = texelColorToBinNdx[texel];
+            const binNdx = binNdxFromTexelColor[texel];
             invocation.bin.fill(binNdxToBinColor[binNdx]);
             yield invocation.advanceLine();
 
@@ -1291,9 +1298,9 @@ renderDiagrams({
     const div = el('div', { className: 'data-table center'}, [diagramDiv, uiDiv]);
     elem.appendChild(div);
     const addRow = makeTable(div, ['color', 'r', 'g', 'b']);
-    const colors = Object.keys(texelColorToBinNdx);
+    const colors = Object.keys(binNdxFromTexelColor);
     for (const color of colors) {
-      const cssColor = unicodeColorsToCSS[color];
+      const cssColor = cssFromUnicodeColor[color];
       const data = rgba8unormFromCSS(cssColor);
       addRow([
         el('div', {className: 'color-cell', style: { backgroundColor: cssColor}}), data[0], data[1], data[2],
@@ -1306,16 +1313,31 @@ renderDiagrams({
     const div = el('div', { className: 'data-table center'}, [diagramDiv, uiDiv]);
     elem.appendChild(div);
     const addRow = makeTable(div, ['color', 'r', 'g', 'b', 'luminance']);
-    const colors = Object.keys(texelColorToBinNdx);
+    const colors = Object.keys(binNdxFromTexelColor);
     for (const color of colors) {
-      const cssColor = unicodeColorsToCSS[color];
+      const cssColor = cssFromUnicodeColor[color];
       const data = rgba8unormFromCSS(cssColor);
+      const luminance = srgbLuminance(...data.map(v => v / 255));
       addRow([
         el('div', {className: 'color-cell', style: { backgroundColor: cssColor}}),
         data[0],
         data[1],
         data[2],
-        srgbLuminance(...data.map(v => v / 255)).toFixed(2),
+        el('div', { className: 'center-vertically'}, [
+          el('div', {
+            className: 'color-cell',
+            style: {
+              border: '1px solid black',
+              backgroundColor: hsl(0, 0, luminance),
+            },
+          }),
+          el('span', {
+            textContent: luminance.toFixed(2),
+            style: {
+              marginLeft: '0.5em',
+            },
+          }),
+        ]),
       ]);
     }
   },
@@ -1329,8 +1351,10 @@ renderDiagrams({
     const draw = svg().addTo(elem).viewbox(0, 0, size, size * 3);
     const chunk = createChunk(draw, size, 'red');
     const pixels = image.flat();
-    kBins.forEach((color, bin) => {
+    kBins.forEach((color) => {
       const count = pixels.filter(v => v === color).length;
+      const luminance = luminanceFromUnicodeColor(color);
+      const bin = Math.min(kBins.length - 1, luminance * kBins.length | 0);
       chunk.bins[bin].text.text(count);
     });
  },
@@ -1343,7 +1367,7 @@ renderDiagrams({
     const h = 150;
     const draw = svg().addTo(diagramDiv).viewbox(0, 0, w, h);
     const pixels = image.flat();
-    const counts = kBins.map(color => {
+    const counts = kBins.slice().sort(sortByLuminance).map(color => {
       return pixels.filter(v => v === color).length;
     });
     const max = counts.reduce((a, b) => Math.max(a, b));
@@ -1394,6 +1418,7 @@ renderDiagrams({
       chunksAcross: 1,
       chunksDown: 1,
       showImage: true,
+      workGroupsLabel: 'workgroup',
       code: `
         for (y = 0; y < size.y; y++) {
           for (x = 0; x < size.x; x++) {
@@ -1507,6 +1532,7 @@ renderDiagrams({
       chunksDown: 2,
       showImage: true,
       bottomLabel: 'chunks',
+      workGroupsLabel: 'workgroups (3 invocations each)',
       numLinesVisible: 3,
       code: `
         xy = wid * chunkSize * lid;
@@ -1536,7 +1562,7 @@ renderDiagrams({
       chunksDown: 2,
       showImage: false,
       useImageData: true,
-      workGroupsLabel: 'single workgroup',
+      workGroupsLabel: 'single workgroup (3 invocations)',
       bottomLabel: 'chunks',
       showColorBin: false,
       code: `
@@ -1646,6 +1672,7 @@ renderDiagrams({
       useImageData: true,
       bottomLabel: 'chunks',
       showColorBin: false,
+      workGroupsLabel: 'workgroups (3 invocations each)',
       code: `
         sum = 0
         bin = lid.x;
