@@ -819,6 +819,7 @@ We'll have the invocations within the workgroup use workgroup storage to sum up 
 luminance values into bins.
 
 Finally we'll copy the workgroup memory for the workgroup into its own "chunk".
+That way we will not have to coordinate with other workgroups.
 When were done, we'll run another compute shader to sum up the chunks.
 
 Let's edit our shader. First we'll change our `bins` from type `storage` to
@@ -1225,7 +1226,7 @@ until we've reduced to 1 chunk.
 <div class="webgpu_center compute-diagram"><div data-diagram="reduceDiagram"></div></div>
 
 We can use just one shader and we just have to pass in a stride to reduce the chunks
-down to one chunk. The stride is the number of chunks we need to look at get the
+down to one chunk. The stride is the number of chunks we need to advance to get to the
 second chunk we're summing with. If we pass in a stride of 1 then we'll sum adjacent
 chunks. If we pass in a stride of 2 then we sum every other chunk. etc...
 
@@ -1271,7 +1272,8 @@ and `uni.stride` that we pass in as a uniform. We then just add the 2 bins from
 the 2 chunks and store them back the first.
 
 If we run it with the correct number of invocations and stride settings it will
-operate something like this
+operate something like this. Note: the darkened chunks are chunks that are no
+longer used.
 
 <div class="webgpu_center compute-diagram"><div data-diagram="reduce"></div></div>
 
@@ -1333,20 +1335,10 @@ dispatches until we've reduced things to 1 chunk
 
 Timing this version I got under 1ms on both machines I tested! 🎉🚀
 
-<!--
 Here are some timings from various machines
 <div class="webgpu_center data-table">
-  <div data-table='{
-    "cols": [       "machine",           "js",     "single",  "pixel/workgroup", "chunks+sum", "chunks+reduce"],
-    "classNames": [ "left",              "right",  "right",   "right",           "right",      "right" ],
-    "rows": [
-                  [ "M1 Mac",            "2.8ms",  "768ms",   "3.2ms",          "11.2ms",      "0.9ms" ],
-                  [ "AMD",               "0ms",    "0ms",     "0.0ms",           "0.0ms",      "0.0ms" ],
-                  [ "NVidia 2070 Super", "19.0ms", "365.0ms", "4.4ms",           "1.7ms",      "0.8ms" ]
-    ]
-  }'></div>
+  <div data-diagram="timings"></div>
 </div>
--->
 
 There may be a faster way to compute a histogram. It might also be better
 to try different chunk sizes. Maybe 16x16 is better than 256x1.

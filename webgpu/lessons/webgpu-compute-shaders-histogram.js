@@ -8,7 +8,7 @@ import { SVG as svg } from '/3rdparty/svg.esm.js';
 import {
   createElem as el, select, makeTable,
 } from './resources/elem.js';
-import { clamp01, hsl, lerp, rgba, rgbaFloatFromCSS, rgba8unormFromCSS } from './resources/utils.js';
+import { clamp01, hsl, lerp, rgba, rgbaFloatFromCSS, rgba8unormFromCSS, zip } from './resources/utils.js';
 
 
 const image = [
@@ -1683,5 +1683,74 @@ renderDiagrams({
       `,
     });
   },
+  timings(elem) {
+    const data = {
+      cols: [       'machine',                             'js',     'single',  'pixel per workgroup', 'chunks + sum', 'chunks + reduce'],
+      classNames: [ 'left',                                'right',  'right',   'right',               'right',        'right' ],
+      rows: [
+                  [ 'M1 Mac',                              '3ms',  '768ms',    '3.2ms',                '11.2ms',       '0.9ms'  ],
+                  [ 'AMD Radeon Pro 5300M+2.6GHz i7',      '39ms', '149ms',    '10.3ms',               '12.5ms',       '2.6ms'  ],
+                  [ 'Intel UHD Graphics 630+2.6GHz i7',    '39ms', '737ms',    '29.0ms',               '6.6ms',        '10.7ms' ],
+                  [ 'NVidia 2070 Super+AMD 3900XT 3.8Ghz', '19ms', '365ms',    '4.4ms',                '1.7ms',        '0.8ms'  ],
+      ],
+    };
+    const addRow = makeTable(elem, data.cols);
+    data.rows.forEach(row => addRow(zip(data.classNames, row)));
+  },
 });
 
+/*
+AMD Ryzen 9 3900XT 12-Core Processor, 3801 Mh
+
+You, 10:43 AM
+2.6 GHz 6-Core Intel Core i7
+Intel UHD Graphics 630
+AMD Radeon Pro 5300M
+
+JS 4
+      JS 110ms
+
+AMD
+4 Slow     3500
+4 Race-Fix 13
+4 Opt      0.9 + 11.4
+4 Opt More 0.9 + 1.7
+
+Slow     1492
+Race-fix 10.3
+Opt       0.5 + 12
+Ot More   0.5 + 1.3
+
+
+Intel
+
+
+4 Slow     2978
+4 Race-Fix 31
+4 Opt      4.5 + 8.0
+4 Opt+More 4.4 + 7.3
+
+JS       39
+Slow     737
+Race-Fix 29
+Opt      1.7 + 4.9
+Opt+More 3.6 + 7.1
+
+
+JS      19.0ms
+Slow   365.0ms
+Race-f   4.4ms
+Opt      1.7ms 0.65 + 1.5
+More     0.8ms 0.66 + 0.2
+
+
+Processor    AMD Ryzen 9 3900XT 12-Core Processor, 3801 Mhz, 12 Core(s), 24 Logical Processor(s)
+
+4ch
+
+JS   73.ms
+Slow 910
+Race 20.6
+Opt  0.6 + 2.2
+More 0.6 + 0.2
+*/
