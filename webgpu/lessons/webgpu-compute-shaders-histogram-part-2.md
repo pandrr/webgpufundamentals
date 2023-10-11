@@ -317,3 +317,50 @@ chunks with an invocation per bin instead of reducing the bins.
 
 Here's some timing info I got testing these versions.
 
+
+## Drawing the histogram on the GPU
+
+Let's draw the histogram on the GPU. In JavaScript we used the
+canvas 2d API to draw a 1✖️height rect handle for each bin which
+was very easy. We could do that using WebGPU as well but I think
+there's a better approach for the particular issue of drawing a
+histogram.
+
+Let's instead just draw a rectangle.
+Drawing rectangles we've covered in many places. For example, most of
+the examples from [the articles on textures](webgpu-textures.html) use
+a rectangle.
+
+For a histogram, in the fragment shader we'll
+look up the height for that column of pixels. If the pixel is above
+the height then we can draw 0, if it's below the height we'll draw
+a color.
+
+Here's a fragment shader that does that
+
+```wgsl
+@group(0) @binding(0) var<storage, read> bins: array<vec4u>;
+
+@fragment fn fs(fsInput: VSOutput) -> @location(0) vec4f {
+  let numBins = arrayLength(bins);
+  let lastBinIndex = u32(numBins - 1);
+  let bin = clamp(
+      u32(fsInput.texcoord.x * numBins)
+      0,
+      lastBinIndex));
+  let heights = bins[bin];
+  
+}
+
+@fragment fs(v) -> vec4f {
+  let numBins = arrayLength(bins);
+  let lastBinIndex = u32(numBins - 1);
+  
+
+
+
+}
+
+```
+
+
