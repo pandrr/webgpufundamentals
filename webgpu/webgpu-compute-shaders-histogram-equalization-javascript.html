@@ -133,6 +133,9 @@ function drawEqualizedColor(imgData, equalized) {
     const bin = Math.min(numBins - 1, v * numBins) | 0;
     const newV = v; //equalized[bin] / numBins;
 
+    const [h, s, l] = rgbToHsl(r, g, b);
+    const [newR, newG, newB] = hslToRgb(h, s, newV);
+
     //rgb = -gbb * yzz - rrg * xxy + l
 
 /*
@@ -154,12 +157,12 @@ b = -gy - rx + l
  
 rgb = -gbb * yzz - rrg * xxy + l
 */
-    const x = 0.2126;
-    const y = 0.7152;
-    const z = 0.0722;
-    let newR = (-b * z - g * y + newV) / x;
-    let newG = (-b * z - r * x + newV) / y;
-    let newB = (-g * y - r * x + newV) / z;
+    //const x = 0.2126;
+    //const y = 0.7152;
+    //const z = 0.0722;
+    //let newR = (-b * z - g * y + newV) / x;
+    //let newG = (-b * z - r * x + newV) / y;
+    //let newB = (-g * y - r * x + newV) / z;
 
     //const l = Math.sqrt(newR * newR + newG * newG + newB * newB);
     //if (l > 1) {
@@ -168,9 +171,9 @@ rgb = -gbb * yzz - rrg * xxy + l
     //  newB /= l;
     //}
 
-    newImageData.data[offset + 0] = clamp(newR, 0, 0.999) * 255 | 0;
-    newImageData.data[offset + 1] = clamp(newG, 0, 0.999) * 255 | 0;
-    newImageData.data[offset + 2] = clamp(newB, 0, 0.999) * 255 | 0;
+    newImageData.data[offset + 0] = clamp(newR, 0, 1) * 255 | 0;
+    newImageData.data[offset + 1] = clamp(newG, 0, 1) * 255 | 0;
+    newImageData.data[offset + 2] = clamp(newB, 0, 1) * 255 | 0;
     newImageData.data[offset + 3] = 255;
   }
 
@@ -203,10 +206,89 @@ function drawHistogram(histogram, numEntries, height = 100) {
 
 // from: https://www.w3.org/WAI/GL/wiki/Relative_luminance
 function srgbLuminance(r, g, b) {
-  return r * 0.2126 +
-         g * 0.7152 +
-         b * 0.0722;
+  return rgbToHsl(r, g, b)[2];
+  //return r * 0.2126 +
+  //       g * 0.7152 +
+  //       b * 0.0722;
 }
+
+const euclideanModulo = (x, a) => x - a * Math.floor(x / a);
+
+function hslToRgb(hue, sat, light) {
+    hue = euclideanModulo(hue, 1);
+    const a = sat * Math.min(light, 1 - light);
+
+    function f(n) {
+        const k = (n + hue * 12) % 12;
+        return light - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    }
+
+    return [f(0), f(8), f(4)];
+}
+
+/*
+
+
+*/
+
+const t3 = v => v.toFixed(3);
+
+for (let i = 0; i < 6; ++i) {
+  console.log('hsl:', ...[i / 6, 1, 0.5].map(t3), 'rgb:', ...hslToRgb(i / 6, 1, 0.5).map(t3));
+}
+console.log('--');
+
+function rgbToHsl(red, green, blue) {
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+    let hue = 0;
+    let sat = 0;
+    const light = (min + max) / 2;
+    const d = max - min;
+
+    if (d !== 0) {
+        sat = (light === 0 || light === 1)
+            ? 0
+            : (max - light) / Math.min(light, 1 - light);
+
+        switch (max) {
+            case red:   hue = (green - blue) / d + (green < blue ? 6 : 0); break;
+            case green: hue = (blue - red) / d + 2; break;
+            case blue:  hue = (red - green) / d + 4;
+        }
+        hue /= 6;
+    }
+
+    return [hue, sat, light];
+}
+
+/*
+
+fn rgbToHsl(rgb: vec3f) -> vec3f {
+  let p = mix(vec4f(rgb.bgr, 2.0 / 3.0), vec4f(rgb.gbr, 1.0 / 3.0), step(rgb.b, rgb.g));
+  let q = mix(vec4f(p.xyz, rgb.w), vec4f(rgb.r, p.yz, 0.0), step(p.x, rgb.r));
+  let l = (q.x + q.y) * 0.5;
+  let d = q.x - q.y;
+  let s = select(q.x - l / min(l, 1 - l), 0.0, l > 0.0 && l < 1.0);
+  let h = select(
+    fract(q.y - q.z) / d + q.w),
+    0,
+    s > 0.0);
+  return vec3f(h, s, l);
+}
+
+*/
+
+[
+  [1, 0, 0],
+  [1, 1, 0],
+  [0, 1, 0],
+  [0, 1, 1],
+  [0, 0, 1],
+  [1, 0, 1],
+].forEach(rgb => {
+  console.log('rgb:', ...rgb.map(t3), 'hsl:', ...rgbToHsl(...rgb).map(t3));
+});
 
 function getImageData(imgBitmap) {
   const canvas = document.createElement('canvas');
