@@ -371,6 +371,7 @@ fn rgb2hsl(rgb: vec3f) -> vec3f {
         return c.z + c.y * (rgb - 0.5) * (1.0 - abs(2.0 * c.z - 1.0));
       }
 
+      /*
       fn rgb2hcv(rgb: vec3f) -> vec3f {
         // Based on work by Sam Hocevar and Emil Persson
         let p = mix(vec4f(rgb.bg, -1.0, 2.0 / 3.0), vec4f(rgb.gb, 0.0, -1.0 / 3.0), step(rgb.b, rgb.g));
@@ -386,13 +387,20 @@ fn rgb2hsl(rgb: vec3f) -> vec3f {
         let s = select(0.0, hcv.y / (1 - abs(l * 2 - 1)), l > 0.0 && l < 1.0);
         return vec3f(hcv.x, s, l);
       }
+      */
 
       fn rgb2hsl(rgb: vec3f) -> vec3f {
-        let p = mix(vec4f(rgb.bgr, 4.0), vec4f(rgb.gbr, 2.0), step(rgb.b, rgb.g));
-        let q = mix(p, vec4f(rgb.r, p.xy, 0.0), step(p.x, rgb.r));
-        let l = (q.x + q.y) * 0.5;
-        let d = q.x - q.y;
+        let p = mix(vec4f(rgb.brg, 4.0), vec4f(rgb.gbr, 2.0), step(rgb.b, rgb.g));
+        let q = mix(p, vec4f(rgb, 0.0), step(p.x, rgb.r));
+        // q now contains (maxChannel, compChannel0, compChannel1, hueBase)
+
+        let minChannel = select(q.g, q.b, q.b < q.g);
+        let l = (q.x + minChannel) * 0.5;
+        let d = q.x - minChannel;
         let s = select(0.0, (q.x - l) / min(l, 1.0 - l), l > 0.0 && l < 1.0);
+
+        // hue = hueBase + (compChannel0 - compChannel1) / deltaMaxMin
+        // where hue goes from 0 to 6 so we divide by 6
         let h = select(0, fract(((q.y - q.z) / d + q.w) / 6.0), s > 0.0);
         return vec3f(h, s, l);
       }
@@ -404,7 +412,7 @@ fn rgb2hsl(rgb: vec3f) -> vec3f {
             fsInput.texcoord,
         );
 
-        let hsl = rgb2hsl2(c.rgb);
+        let hsl = rgb2hsl(c.rgb);
         let rgb = hsl2rgb(hsl + vec3f(0, 0, 0));
 
         return vec4f(rgb, c.w);
