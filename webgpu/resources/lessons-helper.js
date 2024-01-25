@@ -506,7 +506,29 @@ function installAlertCatcher() {
   };
 }
 
+async function checkSupport() {
+  const adapter = await navigator.gpu?.requestAdapter();
+  const device = await adapter?.requestDevice();
+  if (!device) {
+    return;  // samples already handle no WebGPU
+  }
+  // check for no entryPoint support
+  device.pushErrorScope('validation');
+  const module = device.createShaderModule({
+    code: `
+    @compute @workgroup_size(1) fn cs() {};
+    `,
+  });
+  device.createComputePipeline({ compute: { module } });
+  const err = await device.popErrorScope();
+  if (err) {
+    console.log(err);
+    console.log('need new b rowsers');
+  }
+}
+
 function installWebGPULessonSetup() {
+  checkSupport();
   /*
   const isWebGLRE = /^(webgl|webgl2|experimental-webgl)$/i;
   HTMLCanvasElement.prototype.getContext = (function(oldFn) {
@@ -531,7 +553,6 @@ function installWebGPULessonSetup() {
 }
 
 function installWebGPUDebugHelper() {
-
   // capture WebGPU errors
   if (typeof GPUAdapter !== 'undefined') {
     GPUAdapter.prototype.requestDevice = (function(origFn) {
